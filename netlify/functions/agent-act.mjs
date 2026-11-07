@@ -3,8 +3,9 @@
 // POST does it. Each item only accepts an action that fits its current status.
 import { checkToken, spendToken } from "../lib/agent/tokens.mjs";
 import { getJSON, update } from "../lib/agent/store.mjs";
-import { sendEmail, registerEmail, esc } from "../lib/agent/email.mjs";
-import { gbp } from "../lib/agent/pricing.mjs";
+import { sendEmail, registerEmail, priceCheckEmail, esc } from "../lib/agent/email.mjs";
+import { gbp, priceItem } from "../lib/agent/pricing.mjs";
+import { ebayCompetition } from "../lib/agent/competitors.mjs";
 
 const ALLOWED = {
   proposal: {
@@ -87,6 +88,10 @@ export default async (req) => {
       t.a === "paid"
         ? `<label for="carrier">Carrier</label><select id="carrier" name="carrier" required>${CARRIERS.map((c) => `<option>${esc(c)}</option>`).join("")}</select>
            <label for="tracking">Tracking number</label><input id="tracking" name="tracking" required maxlength="60" pattern="[A-Za-z0-9 \\-]{6,60}" autocomplete="off">`
+        : t.a === "registered"
+        ? `<p class="m">Log in to the supplier and enter the real trade price you see for this item.</p>
+           <label for="cost">Trade price per item, including VAT (£)</label><input id="cost" name="cost" required inputmode="decimal" pattern="\\d{1,4}(\\.\\d{1,2})?" placeholder="e.g. 6.49">
+           <label for="delivery">Supplier's dropship delivery charge per order, including VAT (£)</label><input id="delivery" name="delivery" required inputmode="decimal" pattern="\\d{1,3}(\\.\\d{1,2})?" placeholder="0 if free">`
         : t.a === "cant-fulfil"
         ? `<label for="reason">Reason (optional)</label><input id="reason" name="reason" maxlength="200">`
         : "";
@@ -115,11 +120,21 @@ export default async (req) => {
         note = t.a === "drop" ? "Dropped" : "Rejected";
         after = "Dropped. The agent will look for something else in its next run.";
         break;
-      case "proposal:registered":
-        changes = { status: "checking_price", supplier: { ...item.supplier, registered: true } };
-        note = "Supplier registration confirmed";
-        after = "The agent will now check the real trade price.";
+      case "proposal:registered": {
+        const cost = parseFloat(String(form.get("cost") || "").replace(",", "."));
+        const delivery = parseFloat(String(form.get("delivery") || "").replace(",", "."));
+        if (!(cost > 0 && cost < 2000) || !(delivery >= 0 && delivery < 200)) return fail("Please enter the trade price and delivery charge as numbers, e.g. 6.49 and 0.");
+        const live = await ebayCompetition(item.searchTerms).catch(() => null);
+        const competitor = live?.cheapestTotalGBP ?? (item.pricing?.competitorPence != null ? item.pricing.competitorPence / 100 : null);
+        const pricing = priceItem({ supplierCost: cost, supplierDelivery: delivery, feeRate: item.feeRate ?? 0.13, fixedFee: item.fixedFee ?? 0.4, cheapestCompetitor: competitor });
+        changes = { status: pricing.ok ? "ready_to_list" : "price_failed", supplier: { ...item.supplier, registered: true },
+          supplierCostGBP: cost, supplierDeliveryGBP: delivery, costIsEstimate: false, estimateCostPence: item.pricing?.costPence, pricing };
+        note = `Registered; real cost ${gbp(pricing.costPence)}; ${pricing.ok ? "passes" : "fails: " + pricing.reasons.join("; ")}`;
+        after = pricing.ok
+          ? `Real cost ${gbp(pricing.costPence)} → price ${gbp(pricing.pricePence)}, profit ${gbp(pricing.profitPence)}. It's queued for listing (listing starts once eBay selling access is connected).`
+          : `With the real cost (${gbp(pricing.costPence)}) it ${pricing.reasons.join(" and ")}. You'll get an email to list anyway or drop it.`;
         break;
+      }
       case "proposal:list-anyway":
         changes = { status: "ready_to_list" };
         note = "Approved at higher price";
@@ -142,6 +157,10 @@ export default async (req) => {
     }
     const saved = await update(t.k + "/" + t.id, changes, note);
     await spendToken(t);
+    if (t.k === "proposal" && changes.status === "price_failed") {
+      await sendEmail(priceCheckEmail(saved));
+      await update(t.k + "/" + t.id, {}, "Price-check email sent");
+    }
     if (t.k === "proposal" && changes.status === "awaiting_registration") {
       await sendEmail(registerEmail(saved));
       await update(t.k + "/" + t.id, {}, "Registration email sent");

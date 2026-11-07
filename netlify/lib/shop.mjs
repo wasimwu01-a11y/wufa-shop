@@ -40,7 +40,7 @@ async function ebayToken() {
   return tokenCache.token;
 }
 
-async function ebayGet(path) {
+export async function ebayGet(path) {
   const res = await fetch(EBAY_API() + path, {
     headers: {
       Authorization: "Bearer " + (await ebayToken()),

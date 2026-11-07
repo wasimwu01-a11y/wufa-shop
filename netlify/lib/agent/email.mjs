@@ -64,14 +64,20 @@ ${row("Product", link(p.title, p.supplierProductUrl))}
 ${row("Supplier", link(p.supplier.name, p.supplier.url) + (p.supplier.registered ? " (account already set up)" : " (needs registration)"))}
 ${row("Why it meets eBay rules", esc(p.supplier.policyEvidence))}
 ${row("Dispatch", esc(p.supplier.dispatch))}
-${row("Est. cost incl. VAT + delivery", gbp(pr.costPence) + (p.costIsEstimate ? " (estimate until registered)" : ""))}
+${p.supplier.blindShipping ? row("Unbranded parcels", esc(p.supplier.blindShipping)) : ""}
+${p.supplier.returns ? row("Supplier returns", esc(p.supplier.returns)) : ""}
+${row("Cost incl. VAT + delivery", gbp(pr.costPence) + (p.costIsEstimate ? " <i>(estimate until you register)</i>" : ""))}
+${p.costEvidence ? row("Cost based on", esc(p.costEvidence)) : ""}
 ${row("Selling price", "<b>" + gbp(pr.pricePence) + "</b>")}
-${row("eBay fees (est.)", gbp(pr.feesPence))}
+${row("eBay fees (est.)", gbp(pr.feesPence) + (p.feeEvidence ? " – " + esc(p.feeEvidence) : ""))}
 ${row("Profit per sale", "<b>" + gbp(pr.profitPence) + "</b>")}
-${row("Cheapest competitor", pr.competitorPence != null ? gbp(pr.competitorPence) : "none found")}
-${row("Competing listings", esc(p.competition))}
+${row("Cheapest competitor", pr.competitorPence != null ? gbp(pr.competitorPence) + " incl. postage" : "none found")}
+${row("Competition", esc(p.competition))}
 ${row("Demand evidence", esc(p.demand))}
+${p.risks ? row("Risks", esc(p.risks)) : ""}
 ${row("Check sold history", link("Open Terapeak in Seller Hub", "https://www.ebay.co.uk/sh/research?keywords=" + encodeURIComponent(p.searchTerms || p.title)))}
+${p.sources?.length ? row("Sources", p.sources.map((u, i) => link("source " + (i + 1), u)).join(" · ")) : ""}
+${p.run ? row("Research cost", "about $" + Number(p.run.costUSD).toFixed(2) + " (" + esc(p.run.usage.searches) + " searches, " + esc(p.run.usage.fetches) + " pages read)") : ""}
 </table>
 <p style="margin:20px 0 8px">Approve to continue, or reject to drop it.</p>
 ${btn("Approve", actionUrl("proposal", p.id, "approve", APPROVAL_TTL_DAYS), true)}${btn("Reject", actionUrl("proposal", p.id, "reject", APPROVAL_TTL_DAYS))}`);

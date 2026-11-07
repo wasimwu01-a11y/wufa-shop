@@ -20,3 +20,12 @@ See the plan document. Phase 1 adds:
 - `/agent/selftest?key=<AGENT_SECRET>` – sends two TEST emails so the buttons can be tried.
 
 Extra Netlify environment variables: `AGENT_SECRET` (40+ random characters), `RESEND_API_KEY`.
+
+## Dropship agent (Phase 2: research)
+- `netlify/lib/agent/research.mjs` – Claude (web search + web fetch) finds one product + UK wholesale dropship supplier and returns it via a `submit_proposal` tool.
+- `netlify/lib/agent/pipeline.mjs` – pacing (one proposal per 3 days, none while one is waiting), price/competition checks (eBay API when connected, otherwise estimated), proposal email.
+- `agent-schedule` runs daily 07:10 UTC; `agent-research-background` does the work (up to 15 min).
+- `/agent/research-now?key=<AGENT_SECRET>` – start a run now. `/agent/status?key=<AGENT_SECRET>` – what the agent is doing.
+- "Registration done" asks for the real trade price and delivery, then re-checks the £1.50 rule.
+
+Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (default claude-sonnet-5-5), `AGENT_PAUSED=1` to pause, `AGENT_MAX_SEARCHES` (12), `AGENT_ATTEMPTS` (2).

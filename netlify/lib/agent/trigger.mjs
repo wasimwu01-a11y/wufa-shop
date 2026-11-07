@@ -1,0 +1,12 @@
+// Starts the background research job.
+import { env, siteUrl } from "./config.mjs";
+
+export async function startResearch(force = false) {
+  const res = await fetch(siteUrl() + "/.netlify/functions/agent-research-background", {
+    method: "POST",
+    headers: { "x-agent-key": env("AGENT_SECRET"), "content-type": "application/json" },
+    body: JSON.stringify({ force }),
+  });
+  // Netlify answers 202 straight away for background functions.
+  return res.status;
+}
