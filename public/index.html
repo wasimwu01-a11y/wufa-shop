@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wufa Ltd | Gym &amp; Pet Products</title>
+<meta name="description" content="Wufa Ltd – pet and gym products shipped from Belfast, UK.">
+<style>
+:root{--bg:#fafaf8;--card:#fff;--text:#1d1d1b;--muted:#625f58;--accent:#c8372d;--line:#e4e1da}
+@media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#201f1d;--text:#f2f0eb;--muted:#a9a59c;--line:#34322e}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.55}
+a{color:inherit}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+header{border-bottom:1px solid var(--line)}
+header .wrap{display:flex;justify-content:space-between;align-items:center;height:60px}
+.logo{font-weight:800;font-size:1.25rem;letter-spacing:.02em;text-decoration:none}
+nav a{margin-left:18px;text-decoration:none;color:var(--muted);font-size:.95rem}
+nav a:hover{color:var(--text)}
+.hero{padding:44px 0 20px}
+.hero h1{font-size:clamp(1.7rem,4vw,2.4rem);margin:0 0 8px}
+.hero p{color:var(--muted);margin:0;max-width:540px}
+.product{display:grid;grid-template-columns:1fr 1fr;gap:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin:20px 0 40px}
+.gallery{aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--bg);display:flex;align-items:center;justify-content:center;border:1px solid var(--line)}
+.gallery img{width:100%;height:100%;object-fit:cover}
+.thumbs{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+.thumbs button{padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;cursor:pointer;background:var(--bg);aspect-ratio:1/1}
+.thumbs button.on{border-color:var(--accent)}
+.thumbs img{width:100%;height:100%;object-fit:cover;display:block}
+.tag{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.product h2{margin:4px 0 10px;font-size:1.35rem;line-height:1.3}
+.price{font-size:1.8rem;font-weight:800;margin:6px 0 14px}
+.price small{font-size:.85rem;font-weight:400;color:var(--muted)}
+ul.f{padding-left:18px;margin:0 0 18px;color:var(--muted)}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+.btn{display:inline-block;padding:12px 20px;border-radius:9px;font-weight:600;text-decoration:none;border:1px solid var(--line);cursor:pointer;font-size:1rem;font-family:inherit;background:var(--card);color:var(--text)}
+.btn.main{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn[hidden]{display:none}
+.btn.wa{background:#1fa855;border-color:#1fa855;color:#fff}
+.note{font-size:.85rem;color:var(--muted);margin-top:14px}
+section{padding:10px 0 30px}
+h3{font-size:1.2rem;margin:0 0 8px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}
+footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-size:.88rem}
+@media (max-width:680px){.product{grid-template-columns:1fr}}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin:20px 0 40px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;text-decoration:none;display:flex;flex-direction:column;transition:border-color .15s}
+.card:hover{border-color:var(--muted)}
+.card .im{aspect-ratio:1/1;background:#fff;display:flex;align-items:center;justify-content:center}
+.card .im img{width:100%;height:100%;object-fit:contain}
+.card .tx{padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px;flex:1}
+.card .tt{font-size:.95rem;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .pr{font-weight:800;font-size:1.1rem;margin-top:auto}
+.sk .im{background:var(--line);animation:pulse 1.2s ease-in-out infinite}
+.sk .tt{height:2.6em;background:var(--line);border-radius:6px;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.5}}
+.back{display:inline-block;margin:18px 0 0;color:var(--muted);text-decoration:none;font-size:.95rem}
+.back:hover{color:var(--text)}
+.gallery.white{background:#fff}
+.gallery.white img{object-fit:contain}
+.err{color:var(--accent);font-size:.9rem;margin-top:10px}
+.desc{color:var(--muted);margin:0 0 18px;white-space:pre-line}
+.shophead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.shophead h2{margin:0;font-size:1.35rem}
+.shophead span{color:var(--muted);font-size:.9rem}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="#">WUFA</a>
+    <nav><a href="#shop">Shop</a><a href="#delivery">Delivery &amp; returns</a><a href="#contact">Contact</a></nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <h1>Pet &amp; gym products, shipped from Belfast.</h1>
+    <p>Simple, useful products from Wufa Ltd. Pay securely online or message us on WhatsApp.</p>
+  </div>
+
+  <section id="shop">
+    <div id="listView">
+      <div class="shophead"><h2>Shop</h2><span id="count"></span></div>
+      <div class="grid" id="grid">
+        <div class="card sk"><div class="im"></div><div class="tx"><div class="tt"></div></div></div>
+        <div class="card sk"><div class="im"></div><div class="tx"><div class="tt"></div></div></div>
+        <div class="card sk"><div class="im"></div><div class="tx"><div class="tt"></div></div></div>
+        <div class="card sk"><div class="im"></div><div class="tx"><div class="tt"></div></div></div>
+      </div>
+    </div>
+
+    <div id="itemView" hidden>
+      <a class="back" href="#shop">&larr; All products</a>
+      <article class="product">
+        <div>
+          <div class="gallery white"><img id="mainImg" src="" alt=""></div>
+          <div class="thumbs" id="thumbs"></div>
+        </div>
+        <div>
+          <div class="tag" id="itTag"></div>
+          <h2 id="itTitle"></h2>
+          <div class="price" id="itPrice"></div>
+          <ul class="f" id="itFeatures"></ul>
+          <p class="desc" id="itDesc"></p>
+          <div class="btns">
+            <a class="btn main" id="buy" href="#">Buy now</a>
+            <a class="btn wa" id="wa" href="#" target="_blank" rel="noopener">Ask on WhatsApp</a>
+            <a class="btn" id="mail" href="#">Email us</a>
+          </div>
+          <p class="err" id="buyErr" hidden></p>
+          <p class="note">Secure checkout by card, Apple Pay and Google Pay. 30-day returns. By buying you agree to our <a href="terms.html">terms</a>.</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="delivery">
+    <div class="cols">
+      <div class="box"><h3>Delivery</h3><p>Dispatched from Belfast, United Kingdom. Delivery options and timings are shown at checkout.</p></div>
+      <div class="box"><h3>Returns</h3><p>30-day returns on unused items. The buyer pays return postage unless the item is faulty. Contact us first and we’ll sort it out quickly. <a href="terms.html">Full returns terms</a>.</p></div>
+      <div class="box"><h3>Payments</h3><p>Pay securely online. We never see or store your card details. <a href="privacy.html">Privacy policy</a>.</p></div>
+    </div>
+  </section>
+
+  <section id="contact">
+    <h3>Contact us</h3>
+    <p>Questions about a product or an order? Message us on WhatsApp or email and we’ll reply as soon as we can.</p>
+    <div class="btns">
+      <a class="btn wa" id="wa2" href="#" target="_blank" rel="noopener">WhatsApp us</a>
+      <a class="btn" id="mail2" href="#">Send an email</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    Wufa Ltd · Registered in England and Wales · Company number 17441396<br>
+    Registered office: Office 21199, 182–184 High Street North, East Ham, London E6 2JA, United Kingdom<br>
+    <span id="yr"></span> Wufa Ltd. All rights reserved. · <a href="privacy.html">Privacy policy</a> · <a href="terms.html">Terms &amp; conditions</a>
+  </div>
+</footer>
+
+<script>
+/* ===== SETTINGS ===== */
+var WHATSAPP = "447947840834";                 // number with country code, no + or spaces
+var EMAIL    = "malik.fahad.aca@gmail.com";
+/* Shown only if the live eBay product feed can't load (e.g. before eBay is connected). */
+var FALLBACK = [{
+  id: "roller", title: "Reusable Pet Hair Remover Roller – Two-Way Lint & Fur Remover for Cats and Dogs",
+  pricePence: 800, condition: "Brand new", tag: "Pet supplies · Grooming",
+  stripeLink: "https://buy.stripe.com/cNiaEZeEtb4ubuydQ7cQU00",
+  features: ["Two-way roller with red fabric cleaning surfaces","Collects loose cat and dog hair, lint, fluff and light dust","For furniture, bedding, clothing and vehicle upholstery","Reusable – no sticky sheets to replace"],
+  images: [3,2,4,5,9,8,7,6,1].map(function(n){ return "images/pet-hair-roller-" + n + ".jpg"; })
+}];
+/* ==================== */
+
+var products = [], live = false;
+function $(id){ return document.getElementById(id); }
+function money(p){ return "£" + (p / 100).toFixed(2); }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+function contactLinks(title){
+  var msg = encodeURIComponent("Hi Wufa, I’m interested in " + (title ? "the " + title : "your products") + ".");
+  var wa = WHATSAPP ? "https://wa.me/" + WHATSAPP + "?text=" + msg : "#contact";
+  var mail = EMAIL ? "mailto:" + EMAIL + "?subject=" + encodeURIComponent("Enquiry" + (title ? " – " + title.slice(0, 60) : "")) : "#contact";
+  $("wa").href = wa; $("mail").href = mail;
+  return { wa: wa, mail: mail };
+}
+var base = contactLinks("");
+$("wa2").href = base.wa; $("mail2").href = base.mail;
+
+function renderGrid(){
+  $("grid").innerHTML = products.map(function(p){
+    return '<a class="card" href="#item=' + encodeURIComponent(p.id) + '">' +
+      '<div class="im"><img loading="lazy" src="' + esc(p.images[0] || "") + '" alt="' + esc(p.title) + '"></div>' +
+      '<div class="tx"><div class="tt">' + esc(p.title) + '</div><div class="pr">' + money(p.pricePence) + '</div></div></a>';
+  }).join("");
+  $("count").textContent = products.length > 1 ? products.length + " products" : "";
+}
+
+function showItem(id){
+  var p = products.filter(function(x){ return x.id === id; })[0];
+  if (!p) { showList(); return; }
+  $("listView").hidden = true; $("itemView").hidden = false;
+  $("itTag").textContent = p.tag || p.condition || "";
+  $("itTitle").textContent = p.title;
+  $("itPrice").innerHTML = money(p.pricePence) + (p.condition && p.tag ? " <small>" + esc(p.condition) + "</small>" : "");
+  $("itFeatures").innerHTML = (p.features || []).map(function(f){ return "<li>" + esc(f) + "</li>"; }).join("");
+  $("itDesc").textContent = p.description || "";
+  $("buy").textContent = "Buy now – " + money(p.pricePence);
+  $("buy").dataset.id = p.id;
+  $("buyErr").hidden = true;
+  contactLinks(p.title + " (" + money(p.pricePence) + ")");
+  var main = $("mainImg"), th = $("thumbs");
+  main.src = p.images[0] || ""; main.alt = p.title;
+  th.innerHTML = "";
+  if (p.images.length > 1) p.images.forEach(function(src, i){
+    var b = document.createElement("button");
+    b.type = "button"; b.setAttribute("aria-label", "Show photo " + (i + 1));
+    if (i === 0) b.className = "on";
+    var im = document.createElement("img"); im.src = src; im.alt = ""; im.loading = "lazy";
+    b.appendChild(im);
+    b.addEventListener("click", function(){
+      main.src = src;
+      Array.prototype.forEach.call(th.children, function(c){ c.className = ""; });
+      b.className = "on";
+    });
+    th.appendChild(b);
+  });
+  document.title = p.title.slice(0, 60) + " | Wufa Ltd";
+  window.scrollTo(0, $("shop").offsetTop - 10);
+}
+function showList(){
+  $("listView").hidden = false; $("itemView").hidden = true;
+  document.title = "Wufa Ltd | Gym & Pet Products";
+  contactLinks("");
+}
+function route(){
+  var m = location.hash.match(/^#item=(.+)$/);
+  if (m) showItem(decodeURIComponent(m[1]));
+  else { showList(); if (location.hash === "#shop") window.scrollTo(0, $("shop").offsetTop - 10); }
+}
+window.addEventListener("hashchange", route);
+
+$("buy").addEventListener("click", function(e){
+  e.preventDefault();
+  var btn = this, id = btn.dataset.id;
+  var p = products.filter(function(x){ return x.id === id; })[0];
+  if (!p) return;
+  if (p.stripeLink) { location.href = p.stripeLink; return; }
+  var label = btn.textContent;
+  btn.textContent = "Opening secure checkout…"; btn.style.pointerEvents = "none";
+  fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id, quantity: 1 }) })
+    .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+    .then(function(res){
+      if (res.ok && res.j.url) { location.href = res.j.url; return; }
+      throw new Error(res.j.error || "Checkout couldn’t open.");
+    })
+    .catch(function(err){
+      $("buyErr").textContent = (err && err.message ? err.message : "Checkout couldn’t open.") + " You can also order on WhatsApp.";
+      $("buyErr").hidden = false;
+      btn.textContent = label; btn.style.pointerEvents = "";
+    });
+});
+
+fetch("/api/products")
+  .then(function(r){ return r.json(); })
+  .then(function(j){ if (j.products && j.products.length) { products = j.products; live = true; } else throw new Error(j.error || "empty"); })
+  .catch(function(){ products = FALLBACK; })
+  .then(function(){ renderGrid(); route(); });
+
+$("yr").textContent = "© " + new Date().getFullYear();
+</script>
+</body>
+</html>
