@@ -93,6 +93,13 @@ ${btn("Approve", actionUrl("proposal", p.id, "approve", APPROVAL_TTL_DAYS), true
 
 /* ---------- 2. Register with supplier ---------- */
 export function registerEmail(p) {
+  if (p.supplier.registered) {
+    const html = wrap("Enter the trade price: " + p.title, `
+<p>You approved <b>${esc(p.title)}</b>. You already have an account with ${link(p.supplier.name, p.supplier.url)}. Log in, find the item and enter its real trade price and delivery charge.</p>
+<p>${link("Open the product at the supplier", p.supplierProductUrl)}</p>
+${btn("Enter trade price", actionUrl("proposal", p.id, "registered", 14), true)}${btn("Drop this product", actionUrl("proposal", p.id, "drop", 14))}`);
+    return { subject: "Enter trade price: " + p.title, html, text: "Enter the trade price for " + p.title };
+  }
   const html = wrap("Please register with " + p.supplier.name, `
 <p>You approved <b>${esc(p.title)}</b>. To check the real trade price and order it, Wufa needs an account with this supplier.</p>
 <table style="border-collapse:collapse;font-size:14px">

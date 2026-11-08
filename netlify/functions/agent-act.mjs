@@ -25,7 +25,7 @@ const LABEL = {
   approve: "Approve this product",
   reject: "Reject this product",
   drop: "Drop this product",
-  registered: "Confirm supplier registration is done",
+  registered: "Enter the real trade price",
   "list-anyway": "List anyway at the higher price",
   paid: "Confirm you've paid the supplier",
   "cant-fulfil": "Mark this order as can't fulfil",
@@ -105,9 +105,9 @@ export default async (req) => {
     switch (`${t.k}:${t.a}`) {
       case "proposal:approve":
         if (item.supplier?.registered) {
-          changes = { status: "checking_price" };
-          note = "Approved; supplier account exists";
-          after = "The agent will check the real price and list it if it still makes at least £1.50.";
+          changes = { status: "awaiting_registration" };
+          note = "Approved; asking for the real trade price";
+          after = "You'll get an email asking you to enter the real trade price from your supplier account.";
         } else {
           changes = { status: "awaiting_registration" };
           note = "Approved; registration requested";

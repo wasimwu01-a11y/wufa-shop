@@ -6,6 +6,7 @@ import { research, costUSD } from "./research.mjs";
 import { ebayCompetition } from "./competitors.mjs";
 import { priceItem, gbp } from "./pricing.mjs";
 import { sendEmail, proposalEmail } from "./email.mjs";
+import { supplierBrief, recordChecks, getSupplier } from "./suppliers.mjs";
 
 const OPEN = ["awaiting_approval", "awaiting_registration", "price_failed", "running"];
 const clamp = (x, lo, hi, d) => (Number.isFinite(x) ? Math.min(Math.max(x, lo), hi) : d);
@@ -20,6 +21,8 @@ export async function proposalDue(now = Date.now()) {
     const p = await getJSON(k);
     if (p && OPEN.includes(p.status)) return { due: false, reason: `proposal "${p.title}" is waiting for you (${p.status.replace(/_/g, " ")})` };
   }
+  if (meta.lastEmptyRunAt && now - Date.parse(meta.lastEmptyRunAt) < LISTING_INTERVAL_DAYS * 864e5 - 3600e3)
+    return { due: false, reason: `last run found nothing (${new Date(meta.lastEmptyRunAt).toUTCString()}); next try after ${LISTING_INTERVAL_DAYS} days` };
   if (meta.lastProposalAt && now - Date.parse(meta.lastProposalAt) < LISTING_INTERVAL_DAYS * 864e5 - 3600e3)
     return { due: false, reason: `last proposal was ${new Date(meta.lastProposalAt).toUTCString()}; next one after ${LISTING_INTERVAL_DAYS} days` };
   return { due: true, reason: "due" };
@@ -81,7 +84,8 @@ export async function runCycle({ force = false } = {}) {
     let feedback = "";
     const attempts = parseInt(env("AGENT_ATTEMPTS", "2"), 10) || 2;
     for (let i = 0; i < attempts; i++) {
-      const { proposal: c, usage } = await research(prev, feedback);
+      const { proposal: c, usage } = await research(prev, feedback, await supplierBrief());
+      await recordChecks(c?.suppliersChecked).catch(() => {});
       for (const k in totalUsage) totalUsage[k] += usage[k] || 0;
       const ev = await evaluate(c);
       runLog.attempts.push({ title: c?.title || null, ok: ev.ok, reasons: ev.reasons });
@@ -100,7 +104,7 @@ export async function runCycle({ force = false } = {}) {
         searchTerms: c.searchTerms,
         category: c.category || "",
         supplierProductUrl: c.supplierProductUrl,
-        supplier: { ...c.supplier, registered: false },
+        supplier: { ...c.supplier, registered: !!(await getSupplier(c.supplier.url))?.registered },
         supplierCostGBP: c.supplierCostGBP,
         supplierDeliveryGBP: c.supplierDeliveryGBP || 0,
         feeRate: clamp(c.ebayFeeRate, 0.05, 0.2, 0.13),

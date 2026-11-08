@@ -29,3 +29,4 @@ Extra Netlify environment variables: `AGENT_SECRET` (40+ random characters), `RE
 - "Registration done" asks for the real trade price and delivery, then re-checks the £1.50 rule.
 
 Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (default claude-sonnet-5-5), `AGENT_PAUSED=1` to pause, `AGENT_MAX_SEARCHES` (20), `AGENT_MAX_FETCHES` (15), `AGENT_ATTEMPTS` (2).
+- Supplier memory (`netlify/lib/agent/suppliers.mjs`): every supplier checked is remembered with its verdict; `/agent/suppliers?key=<AGENT_SECRET>` lets you mark accounts and trade discounts (your settings are never overwritten). An empty run waits 3 days before retrying (research-now still works).
