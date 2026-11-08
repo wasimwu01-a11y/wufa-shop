@@ -42,6 +42,10 @@ export async function evaluate(c) {
   for (const f of ["title", "searchTerms", "supplierProductUrl"]) if (!c[f]) reasons.push("missing " + f);
   if (!okUrl(c.supplierProductUrl) || !okUrl(c.supplier?.url)) reasons.push("supplier links must be https");
   if (!(c.supplierCostGBP > 0 && c.supplierCostGBP < 500)) reasons.push("supplier cost missing or implausible");
+  if (c.supplier?.payPerOrderByCard !== true || /top.?up|wallet|deposit|prepa(id|y)|minimum order/i.test(c.supplier?.payment || ""))
+    reasons.push("supplier must take card payment per order (no wallet top-up, deposit or minimum order)");
+  if (!(c.deliveryDaysMax > 0)) reasons.push("supplier's delivery time not stated");
+  else if (c.deliveryDaysMax > 10) reasons.push(`delivery up to ${c.deliveryDaysMax} working days is longer than 10`);
   if (reasons.length) return { ok: false, reasons };
 
   const live = await ebayCompetition(c.searchTerms).catch(() => null);
@@ -101,6 +105,9 @@ export async function runCycle({ force = false } = {}) {
         supplierDeliveryGBP: c.supplierDeliveryGBP || 0,
         feeRate: clamp(c.ebayFeeRate, 0.05, 0.2, 0.13),
         fixedFee: clamp(c.ebayFixedFeeGBP, 0, 1, 0.4),
+        dispatchDays: c.dispatchDays ?? null,
+        deliveryDaysMax: c.deliveryDaysMax,
+        deliveryEvidence: c.deliveryEvidence || "",
         costIsEstimate: !!c.costIsEstimate,
         costEvidence: c.costEvidence || "",
         feeEvidence: c.feeEvidence || "",

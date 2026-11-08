@@ -28,4 +28,4 @@ Extra Netlify environment variables: `AGENT_SECRET` (40+ random characters), `RE
 - `/agent/research-now?key=<AGENT_SECRET>` – start a run now. `/agent/status?key=<AGENT_SECRET>` – what the agent is doing.
 - "Registration done" asks for the real trade price and delivery, then re-checks the £1.50 rule.
 
-Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (default claude-sonnet-5-5), `AGENT_PAUSED=1` to pause, `AGENT_MAX_SEARCHES` (12), `AGENT_ATTEMPTS` (2).
+Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (default claude-sonnet-5-5), `AGENT_PAUSED=1` to pause, `AGENT_MAX_SEARCHES` (20), `AGENT_MAX_FETCHES` (15), `AGENT_ATTEMPTS` (2).

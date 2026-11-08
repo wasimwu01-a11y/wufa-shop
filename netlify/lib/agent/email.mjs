@@ -64,6 +64,9 @@ ${row("Product", link(p.title, p.supplierProductUrl))}
 ${row("Supplier", link(p.supplier.name, p.supplier.url) + (p.supplier.registered ? " (account already set up)" : " (needs registration)"))}
 ${row("Why it meets eBay rules", esc(p.supplier.policyEvidence))}
 ${row("Dispatch", esc(p.supplier.dispatch))}
+${p.deliveryDaysMax ? row("Delivery time to show", (p.dispatchDays != null ? "dispatch in " + esc(p.dispatchDays) + " working day(s), " : "") + "delivered within <b>" + esc(p.deliveryDaysMax) + " working days</b>" + (p.deliveryEvidence ? " – " + esc(p.deliveryEvidence) : "")) : ""}
+${p.supplier.payment ? row("Payment", esc(p.supplier.payment)) : ""}
+${p.supplier.signupNotes ? row("Account terms", esc(p.supplier.signupNotes)) : ""}
 ${p.supplier.blindShipping ? row("Unbranded parcels", esc(p.supplier.blindShipping)) : ""}
 ${p.supplier.returns ? row("Supplier returns", esc(p.supplier.returns)) : ""}
 ${row("Cost incl. VAT + delivery", gbp(pr.costPence) + (p.costIsEstimate ? " <i>(estimate until you register)</i>" : ""))}
