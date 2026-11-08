@@ -30,3 +30,5 @@ Extra Netlify environment variables: `AGENT_SECRET` (40+ random characters), `RE
 
 Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (default claude-sonnet-5-5), `AGENT_PAUSED=1` to pause, `AGENT_MAX_SEARCHES` (20), `AGENT_MAX_FETCHES` (15), `AGENT_ATTEMPTS` (2).
 - Supplier memory (`netlify/lib/agent/suppliers.mjs`): every supplier checked is remembered with its verdict; `/agent/suppliers?key=<AGENT_SECRET>` lets you mark accounts and trade discounts (your settings are never overwritten). An empty run waits 3 days before retrying (research-now still works).
+- Persistent research: a run keeps trying new candidates (feedback on each failure) until one passes, up to ~11 minutes; then it chains another run while today's budget remains. `AGENT_DAILY_BUDGET_USD` (default 3), `AGENT_MAX_ATTEMPTS` per run (default 8).
+- Rule 8: if the supplier sells the same item on eBay, our price must be at or below its own eBay price.

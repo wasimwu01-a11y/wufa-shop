@@ -2,7 +2,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "../lib/agent/config.mjs";
 import { getJSON, listKeys } from "../lib/agent/store.mjs";
-import { proposalDue } from "../lib/agent/pipeline.mjs";
+import { proposalDue, dailyBudget } from "../lib/agent/pipeline.mjs";
 
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
@@ -22,6 +22,7 @@ export default async (req) => {
     "Next proposal due: " + (due.due ? "yes (next daily run at 07:10 UTC)" : "no – " + due.reason),
     "Research running: " + (meta.running ? "since " + meta.running : "no"),
     "Last proposal: " + (meta.lastProposalAt || "none yet"),
+    "Research spend today: $" + (meta.spend?.date === new Date().toISOString().slice(0, 10) ? meta.spend.usd.toFixed(2) : "0.00") + " of $" + dailyBudget().toFixed(2) + " daily budget",
   ];
   if (meta.lastRun) {
     lines.push("", "Last run: " + meta.lastRun.at + (meta.lastRun.error ? "  ERROR: " + meta.lastRun.error : ""));

@@ -17,7 +17,7 @@ export default async (req) => {
   const missing = ["ANTHROPIC_API_KEY", "RESEND_API_KEY"].filter((k) => !env(k));
   if (missing.length) return text("Missing settings: " + missing.join(", "), 503);
   const due = await proposalDue();
-  if (/in progress|waiting for you/.test(due.reason)) return text("Not started: " + due.reason + ".");
+  if (/in progress|waiting for you|budget/.test(due.reason)) return text("Not started: " + due.reason + ".");
   const status = await startResearch(true);
   if (status !== 202 && status !== 200) return text("Couldn't start the research job (status " + status + "). Background jobs may not be available on this Netlify plan.", 502);
   return text("Research started. A proposal email should arrive in about 5–15 minutes. If nothing suitable is found, no email is sent; check again later with /agent/status.");

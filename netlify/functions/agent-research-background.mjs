@@ -3,6 +3,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "../lib/agent/config.mjs";
 import { runCycle } from "../lib/agent/pipeline.mjs";
+import { startResearch } from "../lib/agent/trigger.mjs";
 
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
@@ -15,6 +16,7 @@ export default async (req) => {
   try {
     const r = await runCycle({ force: !!body.force });
     console.log("research cycle:", JSON.stringify(r));
+    if (r.chain && env("AGENT_PAUSED") !== "1") console.log("budget left – starting another run:", await startResearch(true));
   } catch (e) {
     console.error("research cycle failed:", e);
   }

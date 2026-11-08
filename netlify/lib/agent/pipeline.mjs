@@ -8,6 +8,8 @@ import { priceItem, gbp } from "./pricing.mjs";
 import { sendEmail, proposalEmail } from "./email.mjs";
 import { supplierBrief, recordChecks, getSupplier } from "./suppliers.mjs";
 
+export const dailyBudget = () => parseFloat(env("AGENT_DAILY_BUDGET_USD", "3")) || 3;
+const MAX_RUN_MS = 11 * 60e3; // background jobs stop at 15 minutes; leave room to save and email
 const OPEN = ["awaiting_approval", "awaiting_registration", "price_failed", "running"];
 const clamp = (x, lo, hi, d) => (Number.isFinite(x) ? Math.min(Math.max(x, lo), hi) : d);
 const okUrl = (u) => /^https:\/\/[^\s]+$/i.test(String(u || ""));
@@ -21,8 +23,9 @@ export async function proposalDue(now = Date.now()) {
     const p = await getJSON(k);
     if (p && OPEN.includes(p.status)) return { due: false, reason: `proposal "${p.title}" is waiting for you (${p.status.replace(/_/g, " ")})` };
   }
-  if (meta.lastEmptyRunAt && now - Date.parse(meta.lastEmptyRunAt) < LISTING_INTERVAL_DAYS * 864e5 - 3600e3)
-    return { due: false, reason: `last run found nothing (${new Date(meta.lastEmptyRunAt).toUTCString()}); next try after ${LISTING_INTERVAL_DAYS} days` };
+  const today = new Date(now).toISOString().slice(0, 10);
+  if (meta.spend?.date === today && meta.spend.usd >= dailyBudget())
+    return { due: false, reason: `today's research budget ($${dailyBudget().toFixed(2)}) is used up; it carries on tomorrow` };
   if (meta.lastProposalAt && now - Date.parse(meta.lastProposalAt) < LISTING_INTERVAL_DAYS * 864e5 - 3600e3)
     return { due: false, reason: `last proposal was ${new Date(meta.lastProposalAt).toUTCString()}; next one after ${LISTING_INTERVAL_DAYS} days` };
   return { due: true, reason: "due" };
@@ -58,6 +61,12 @@ export async function evaluate(c) {
     cheapestTotalGBP: c.cheapestCompetitorGBP ?? null,
   };
 
+  // Supplier also sells this item on eBay: its own price is the real competition.
+  const ownEbay = c.supplierSellsOnEbay && c.supplierEbayPriceGBP > 0 ? c.supplierEbayPriceGBP : null;
+  if (ownEbay != null && (competition.cheapestTotalGBP == null || ownEbay < competition.cheapestTotalGBP)) {
+    competition.cheapestTotalGBP = ownEbay;
+    competition.source += "; supplier's own eBay listing";
+  }
   const pricing = priceItem({
     supplierCost: c.supplierCostGBP,
     supplierDelivery: clamp(c.supplierDeliveryGBP, 0, 50, 0),
@@ -66,33 +75,46 @@ export async function evaluate(c) {
     minProfit: MIN_PROFIT_GBP,
     cheapestCompetitor: competition.cheapestTotalGBP,
   });
+  if (ownEbay != null && pricing.pricePence > Math.round(ownEbay * 100))
+    pricing.reasons = pricing.reasons.map((r) => r.replace("the cheapest competitor", "the supplier's own eBay price"));
   return { ok: pricing.ok, reasons: pricing.reasons, pricing, competition };
 }
 
-/** Run one cycle. force=true skips the "is it due" check (manual trigger). */
+/** Run one cycle: keep researching until a candidate passes, the run's time is up, or today's budget is spent.
+ *  Returns { sent } or { sent:false, chain } – chain=true means "start another run, budget remains". */
 export async function runCycle({ force = false } = {}) {
   const due = await proposalDue();
   if (!force && !due.due) return { sent: false, reason: due.reason };
-  if (force && /in progress|waiting for you/.test(due.reason)) return { sent: false, reason: due.reason };
+  if (force && /in progress|waiting for you|budget/.test(due.reason)) return { sent: false, reason: due.reason };
 
-  const meta = (await getJSON("meta/agent")) || {};
+  const started = Date.now();
+  let meta = (await getJSON("meta/agent")) || {};
   await setJSON("meta/agent", { ...meta, running: new Date().toISOString() });
   const runLog = { at: new Date().toISOString(), attempts: [] };
   const totalUsage = { input: 0, output: 0, searches: 0, fetches: 0 };
+  const today = new Date().toISOString().slice(0, 10);
+  let spentToday = meta.spend?.date === today ? meta.spend.usd : 0;
+  const maxAttempts = parseInt(env("AGENT_MAX_ATTEMPTS", "8"), 10) || 8;
   try {
     const prev = await previousTitles();
-    let feedback = "";
-    const attempts = parseInt(env("AGENT_ATTEMPTS", "2"), 10) || 2;
-    for (let i = 0; i < attempts; i++) {
+    const tried = [];
+    for (let i = 0; i < maxAttempts; i++) {
+      if (Date.now() - started > MAX_RUN_MS) break;
+      if (spentToday >= dailyBudget()) break;
+      const feedback = tried.length
+        ? tried.slice(-6).join(" | ") + ". Try a different product" + (tried.length >= 3 ? ", a different supplier or a different category within pet/fitness" : "")
+        : "";
       const { proposal: c, usage } = await research(prev, feedback, await supplierBrief());
       await recordChecks(c?.suppliersChecked).catch(() => {});
       for (const k in totalUsage) totalUsage[k] += usage[k] || 0;
+      spentToday += costUSD(usage);
+      meta = { ...meta, spend: { date: today, usd: Math.round(spentToday * 100) / 100 } };
+      await setJSON("meta/agent", { ...meta, running: new Date(started).toISOString() });
       const ev = await evaluate(c);
       runLog.attempts.push({ title: c?.title || null, ok: ev.ok, reasons: ev.reasons });
       if (!ev.ok) {
-        if (c?.found === false) break; // researcher found nothing at all; don't spend more this run
-        feedback = `"${c?.title}" from ${c?.supplier?.name}: ${ev.reasons.join("; ")}`;
-        prev.push(`${c?.title} (${c?.supplier?.name})`);
+        tried.push(c?.found === false ? `nothing found (${String(c?.reasonNotFound || "").slice(0, 200)})` : `"${c?.title}" from ${c?.supplier?.name} failed: ${ev.reasons.join("; ")}`);
+        if (c?.title) prev.push(`${c.title} (${c?.supplier?.name})`);
         continue;
       }
       const cost = costUSD(totalUsage);
@@ -131,7 +153,10 @@ export async function runCycle({ force = false } = {}) {
       return { sent: true, id: p.id, title: p.title, cost: p.run.costUSD };
     }
     await setJSON("meta/agent", { ...meta, running: null, lastRun: runLog, lastEmptyRunAt: new Date().toISOString() });
-    return { sent: false, reason: "no candidate passed the checks", attempts: runLog.attempts, costUSD: Math.round(costUSD(totalUsage) * 100) / 100 };
+    const chain = spentToday < dailyBudget() - 0.25 && (meta.chainCount?.date !== today || meta.chainCount.n < 20);
+    if (chain) await setJSON("meta/agent", { ...meta, running: null, lastRun: runLog, lastEmptyRunAt: new Date().toISOString(),
+      chainCount: { date: today, n: (meta.chainCount?.date === today ? meta.chainCount.n : 0) + 1 } });
+    return { sent: false, chain, reason: "no candidate passed the checks yet", attempts: runLog.attempts, spentToday: Math.round(spentToday * 100) / 100 };
   } catch (e) {
     await setJSON("meta/agent", { ...meta, running: null, lastRun: { ...runLog, error: String(e.message || e) } });
     throw e;

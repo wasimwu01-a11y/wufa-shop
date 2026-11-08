@@ -36,6 +36,9 @@ const SUBMIT = {
       ebayFeeRate: { type: "number", description: "Current eBay UK final value fee rate for this category for a business seller, as a fraction (e.g. 0.128)" },
       ebayFixedFeeGBP: { type: "number", description: "eBay UK per-order fixed fee in GBP for this sale price" },
       feeEvidence: { type: "string", description: "URL or note for the fee figures" },
+      supplierSellsOnEbay: { type: "boolean", description: "true if the supplier (or its own brand store) sells this same item on eBay UK" },
+      supplierEbayPriceGBP: { type: "number", description: "The supplier's own eBay UK price for this item incl. postage, if it sells it there" },
+      supplierEbayEvidence: { type: "string", description: "eBay seller name / listing URL, or how you checked that it doesn't sell there" },
       competitorCount: { type: "integer", description: "Approximate number of competing new, fixed-price listings on eBay UK" },
       cheapestCompetitorGBP: { type: "number", description: "Lowest competing price on eBay UK including postage" },
       competitionNotes: { type: "string" },
@@ -83,6 +86,7 @@ Hard rules (reject any candidate that breaks one):
 5. Prefer: pet supplies and home gym / fitness accessories (Wufa's shop theme), light parcels, moderate competition (roughly under 200 listings), products with clear evidence of steady demand.
 6. Target products that sell for roughly £15–40 on eBay UK: dropship delivery charges (often £3–6 per order) make cheaper items uncompetitive. Always include the supplier's delivery charge in the cost.
 7. Payment: the supplier MUST let Wufa pay each dropship order by card at checkout. Reject suppliers that require a wallet top-up, prepaid balance, deposit or minimum order value. Note any monthly or sign-up fee in supplier.signupNotes. Report how payment works in supplier.payment.
+8. Supplier on eBay: before proposing, search eBay UK for the supplier's own store, brand and this exact item. Many wholesalers also sell retail on eBay. If the supplier sells the same item there, its price is the real competition: reject the product unless Wufa's price (formula in rule 3) is at or below the supplier's own eBay price. Report supplierSellsOnEbay, supplierEbayPriceGBP and supplierEbayEvidence. A supplier whose trade price equals its own eBay retail price can never work: mark it rejected in suppliersChecked.
 
 Method: search for UK dropship/wholesale suppliers in the categories above, open their pages to read terms (dropship programme, delivery, returns, trade prices). Check eBay UK competition and fees using search results. Only report facts you saw. A hidden trade price is NOT a reason to reject a credible wholesale supplier: estimate it from what is visible (public price lists, RRP, the supplier's stated margins, comparable suppliers), set costIsEstimate=true and explain the estimate in costEvidence. Wufa will register and type in the real price before anything is listed. Use your page reads on the most promising supplier and product rather than surveying many.
 ${supplierBrief}
