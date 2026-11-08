@@ -105,6 +105,8 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
           <div class="price" id="itPrice"></div>
           <ul class="f" id="itFeatures"></ul>
           <p class="desc" id="itDesc"></p>
+          <div id="opts" hidden><label for="optSel" id="optLabel" style="display:block;font-weight:600;margin:0 0 6px"></label>
+            <select id="optSel" style="font:inherit;width:100%;max-width:360px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);margin:0 0 18px"></select></div>
           <div class="btns">
             <a class="btn main" id="buy" href="#">Buy now</a>
             <a class="btn wa" id="wa" href="#" target="_blank" rel="noopener">Ask on WhatsApp</a>
@@ -176,7 +178,7 @@ function renderGrid(){
   $("grid").innerHTML = products.map(function(p){
     return '<a class="card" href="#item=' + encodeURIComponent(p.id) + '">' +
       '<div class="im"><img loading="lazy" src="' + esc(p.images[0] || "") + '" alt="' + esc(p.title) + '"></div>' +
-      '<div class="tx"><div class="tt">' + esc(p.title) + '</div><div class="pr">' + money(p.pricePence) + '</div></div></a>';
+      '<div class="tx"><div class="tt">' + esc(p.title) + '</div><div class="pr">' + (p.priceVaries ? 'from ' : '') + money(p.pricePence) + '</div></div></a>';
   }).join("");
   $("count").textContent = products.length > 1 ? products.length + " products" : "";
 }
@@ -192,12 +194,39 @@ function showItem(id){
   $("itDesc").textContent = p.description || "";
   $("buy").textContent = "Buy now – " + money(p.pricePence);
   $("buy").dataset.id = p.id;
+  $("buy").dataset.vid = p.id;
   $("buyErr").hidden = true;
   contactLinks(p.title + " (" + money(p.pricePence) + ")");
+  setGallery(p.images, p.title);
+  var opts = $("opts"), sel = $("optSel");
+  if (p.variants && p.variants.length > 1) {
+    $("optLabel").textContent = "Choose " + (p.optionName || "option").toLowerCase();
+    sel.innerHTML = p.variants.map(function(v){
+      return '<option value="' + esc(v.id) + '"' + (v.available ? '' : ' disabled') + '>' + esc(v.label) + (p.priceVaries ? ' – ' + money(v.pricePence) : '') + (v.available ? '' : ' (sold out)') + '</option>';
+    }).join("");
+    sel.value = p.id;
+    sel.onchange = function(){ pickVariant(p, sel.value); };
+    opts.hidden = false;
+    pickVariant(p, p.id);
+  } else { opts.hidden = true; sel.onchange = null; }
+  document.title = p.title.slice(0, 60) + " | Wufa Ltd";
+  window.scrollTo(0, $("shop").offsetTop - 10);
+}
+function pickVariant(p, vid){
+  var v = p.variants.filter(function(x){ return x.id === vid; })[0];
+  if (!v) return;
+  $("itPrice").textContent = money(v.pricePence);
+  $("buy").textContent = "Buy now – " + money(v.pricePence);
+  $("buy").dataset.vid = v.id;
+  $("buyErr").hidden = true;
+  contactLinks(p.title + " – " + v.label + " (" + money(v.pricePence) + ")");
+  if (v.images && v.images.length) setGallery(v.images.concat(p.images.filter(function(i){ return v.images.indexOf(i) < 0; })), p.title + " – " + v.label);
+}
+function setGallery(images, alt){
   var main = $("mainImg"), th = $("thumbs");
-  main.src = p.images[0] || ""; main.alt = p.title;
+  main.src = images[0] || ""; main.alt = alt;
   th.innerHTML = "";
-  if (p.images.length > 1) p.images.forEach(function(src, i){
+  if (images.length > 1) images.forEach(function(src, i){
     var b = document.createElement("button");
     b.type = "button"; b.setAttribute("aria-label", "Show photo " + (i + 1));
     if (i === 0) b.className = "on";
@@ -210,8 +239,6 @@ function showItem(id){
     });
     th.appendChild(b);
   });
-  document.title = p.title.slice(0, 60) + " | Wufa Ltd";
-  window.scrollTo(0, $("shop").offsetTop - 10);
 }
 function showList(){
   $("listView").hidden = false; $("itemView").hidden = true;
@@ -227,13 +254,13 @@ window.addEventListener("hashchange", route);
 
 $("buy").addEventListener("click", function(e){
   e.preventDefault();
-  var btn = this, id = btn.dataset.id;
+  var btn = this, id = btn.dataset.id, vid = btn.dataset.vid || id;
   var p = products.filter(function(x){ return x.id === id; })[0];
   if (!p) return;
   if (p.stripeLink) { location.href = p.stripeLink; return; }
   var label = btn.textContent;
   btn.textContent = "Opening secure checkout…"; btn.style.pointerEvents = "none";
-  fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id, quantity: 1 }) })
+  fetch("/api/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: vid, quantity: 1 }) })
     .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
     .then(function(res){
       if (res.ok && res.j.url) { location.href = res.j.url; return; }

@@ -46,9 +46,9 @@ export default async (req) => {
           currency: "gbp",
           unit_amount: p.pricePence,
           product_data: {
-            name: p.title.slice(0, 250),
+            name: (p.variantLabel ? p.title.slice(0, 200) + " – " + p.variantLabel : p.title).slice(0, 250),
             images: p.images[0] ? { 0: p.images[0] } : undefined,
-            metadata: { ebay_item_id: p.id },
+            metadata: { ebay_item_id: p.id, option: (p.variantLabel || "").slice(0, 200) },
           },
         },
       },
@@ -64,7 +64,7 @@ export default async (req) => {
       },
     },
     phone_number_collection: { enabled: true },
-    metadata: { ebay_item_id: p.id, ebay_url: (p.ebayUrl || "").slice(0, 490) },
+    metadata: { ebay_item_id: p.id, option: (p.variantLabel ? (p.optionName ? p.optionName + ": " : "") + p.variantLabel : "").slice(0, 490), ebay_url: (p.ebayUrl || "").slice(0, 490) },
     payment_intent_data: { description: "Wufa: " + p.title.slice(0, 200) },
   });
 
