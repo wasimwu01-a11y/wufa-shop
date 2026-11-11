@@ -17,13 +17,37 @@ const SEED = [
   { name: "Go Dropship", url: "https://godropship.co.uk", verdict: "rejected", reason: "Reports of shipping from China; untracked large-letter parcels; payment terms unverified" },
 ];
 
+// Supplier research done in chat on 10 Nov 2026 (first-party pages where available).
+const SEED_V2 = [
+  { name: "Something Different Wholesale (Connect dropship)", url: "https://www.somethingdifferentwholesale.com", verdict: "ok",
+    reason: "Free, no subscription; pay-as-you-go card payment per order (default card charged on import); RRP = trade price +120% (trade ≈ 45% of RRP); unbranded box and packing slip; same-day dispatch before 2pm from Swansea; 48h tracked; XML/CSV feeds updated every 15 min; may sell on eBay. Giftware and homeware." },
+  { name: "AW Dropship (Ancient Wisdom)", url: "https://www.aw-dropship.com", verdict: "ok",
+    reason: "Sheffield; pay per order at checkout (optional prepaid balance, not required); UK delivery £2.79 (<100g), £2.99 (100g–2kg, Royal Mail Tracked 48), £5.99 (2kg+, APC next day); dispatch 1–2 working days (3–4 in Oct–Dec); eBay integration. Aromatherapy, home fragrance, gifts, yoga/lifestyle." },
+  { name: "Reydon Sports", url: "https://www.reydonsports.com", verdict: "rejected",
+    reason: "UNCONFIRMED – ask them: B2B only (does not sell to consumers, so no eBay undercutting), trade prices with SRP and intake margin shown, no MOQ, CSV of 9,000 SKUs (sports, toys, outdoor). Dropship availability and payment method not confirmed – set to Approved only if they confirm dropship with card payment per order." },
+  { name: "Costway UK", url: "https://www.costway.co.uk", verdict: "rejected", reason: "Dropshippers pay Costway's listed (retail) price; Costway sells the same items on eBay itself – can't beat its own price with £1.50 profit." },
+  { name: "Aosom UK", url: "https://www.aosom.co.uk", verdict: "rejected", reason: "Large own eBay store (Aosom-UK, 1.4M+ sold) selling the same PawHut/SPORTNOW items – undercuts any reseller." },
+  { name: "Bytomic", url: "https://www.bytomic.com", verdict: "rejected", reason: "No dropship service for retailers; bans resale on eBay/Amazon." },
+  { name: "Su-Bridge Pet Supplies", url: "https://su-bridge.co.uk", verdict: "rejected", reason: "Does not offer dropshipping." },
+  { name: "Puckator", url: "https://www.puckator.co.uk", verdict: "rejected", reason: "Dropship service permanently closed; wholesale only (£50 minimum)." },
+  { name: "Pedigree Wholesale (petproducts.co.uk)", url: "https://petproducts.co.uk", verdict: "rejected", reason: "Trade wholesale to shops; no dropship service stated." },
+  { name: "Clearance King", url: "https://www.clearance-king.co.uk", verdict: "rejected", reason: "£200 + VAT dropship minimum." },
+  { name: "Pound Wholesale", url: "https://www.poundwholesale.co.uk", verdict: "rejected", reason: "Sold in packs/cases; parcels not blind-dropshipped." },
+  { name: "Power Body / Olivit", url: "https://www.powerbody.eu", verdict: "rejected", reason: "Supplements and sports nutrition – restricted category (rule 4)." },
+];
+
 async function seedOnce() {
-  if (await getJSON("meta/suppliers-seeded")) return;
-  for (const s of SEED) {
-    const host = hostOf(s.url);
-    if (!(await getJSON(keyOf(host)))) await setJSON(keyOf(host), { ...s, host, registered: false, discountNote: "", by: "seed", checkedAt: "2026-11-08" });
-  }
-  await setJSON("meta/suppliers-seeded", { at: new Date().toISOString() });
+  const seeded = (await getJSON("meta/suppliers-seeded")) || {};
+  const put = async (list, date) => {
+    for (const s of list) {
+      const host = hostOf(s.url);
+      const cur = await getJSON(keyOf(host));
+      if (!cur || cur.by === "seed" || cur.by === "agent") await setJSON(keyOf(host), { ...cur, ...s, host, registered: !!cur?.registered, discountNote: cur?.discountNote || "", by: "seed", checkedAt: date });
+    }
+  };
+  if (!seeded.at) await put(SEED, "2026-11-08");
+  if ((seeded.v || 1) < 2) await put(SEED_V2, "2026-11-10");
+  if (!seeded.at || (seeded.v || 1) < 2) await setJSON("meta/suppliers-seeded", { at: seeded.at || new Date().toISOString(), v: 2 });
 }
 
 export async function allSuppliers() {

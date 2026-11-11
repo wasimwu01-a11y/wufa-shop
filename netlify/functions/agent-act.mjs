@@ -15,6 +15,11 @@ const ALLOWED = {
     registered: ["awaiting_registration"],
     "list-anyway": ["price_failed"],
   },
+  agent: {
+    "allow-research": ["awaiting_choice", "research_off"],
+    "decline-research": ["awaiting_choice"],
+    "stop-research": ["research_on"],
+  },
   order: {
     paid: ["awaiting_payment"],
     "cant-fulfil": ["awaiting_payment"],
@@ -22,6 +27,9 @@ const ALLOWED = {
 };
 
 const LABEL = {
+  "allow-research": "Allow the agent to research the internet for new suppliers and products",
+  "decline-research": "Keep internet research off – you'll add products yourself",
+  "stop-research": "Stop internet research",
   approve: "Approve this product",
   reject: "Reject this product",
   drop: "Drop this product",
@@ -60,6 +68,10 @@ async function load(t) {
 }
 
 function summary(t, item) {
+  if (t.k === "agent")
+    return t.a === "allow-research"
+      ? `<p>When the listing queue is empty, the agent will search the web for UK wholesale dropship suppliers and products that meet your rules, using your Anthropic credit (up to the daily research budget). Every product still comes to you for approval. You can stop it any time from a proposal email.</p>`
+      : `<p>The agent will wait until you add products with the screener.</p>`;
   if (t.k === "proposal")
     return `<dl><dt>Product</dt><dd>${esc(item.title)}</dd><dt>Supplier</dt><dd>${esc(item.supplier?.name)}</dd><dt>Price</dt><dd>${gbp(item.pricing.pricePence)}</dd><dt>Profit</dt><dd>${gbp(item.pricing.profitPence)}</dd></dl>`;
   return `<dl><dt>Item</dt><dd>${esc(item.title)} × ${esc(item.quantity)}</dd><dt>Channel</dt><dd>${esc(item.channel)} order ${esc(item.channelOrderId)}</dd><dt>Customer</dt><dd>${esc(item.shipTo?.name)}, ${esc(item.shipTo?.postcode)}</dd></dl>`;
@@ -104,7 +116,11 @@ export default async (req) => {
   try {
     switch (`${t.k}:${t.a}`) {
       case "proposal:approve":
-        if (item.supplier?.registered) {
+        if (item.source === "catalog") {
+          changes = { status: "ready_to_list" };
+          note = "Approved (known supplier price)";
+          after = `Approved at ${gbp(item.pricing.pricePence)} (profit ${gbp(item.pricing.profitPence)}). It's queued for listing on eBay and your website.`;
+        } else if (item.supplier?.registered) {
           changes = { status: "awaiting_registration" };
           note = "Approved; asking for the real trade price";
           after = "You'll get an email asking you to enter the real trade price from your supplier account.";
@@ -113,6 +129,18 @@ export default async (req) => {
           note = "Approved; registration requested";
           after = "You'll get an email with the supplier sign-up details shortly.";
         }
+        break;
+      case "agent:allow-research":
+        changes = { status: "research_on" }; note = "Internet research allowed";
+        after = "Internet research is on. The agent will start looking for new suppliers and products at its next run (07:10), or straight away if you open your research-now link.";
+        break;
+      case "agent:decline-research":
+        changes = { status: "research_off" }; note = "Internet research declined";
+        after = "OK – internet research stays off. Add products with the screener and proposals will restart automatically.";
+        break;
+      case "agent:stop-research":
+        changes = { status: "research_off" }; note = "Internet research stopped";
+        after = "Internet research is off. The agent will only propose products from your listing queue.";
         break;
       case "proposal:reject":
       case "proposal:drop":
@@ -156,6 +184,7 @@ export default async (req) => {
         break;
     }
     const saved = await update(t.k + "/" + t.id, changes, note);
+    if (t.k === "proposal" && item.queueKey) await update(item.queueKey, { status: changes.status === "rejected" ? "rejected" : changes.status === "ready_to_list" ? "approved" : "proposed" }, note);
     await spendToken(t);
     if (t.k === "proposal" && changes.status === "price_failed") {
       await sendEmail(priceCheckEmail(saved));

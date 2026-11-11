@@ -3,9 +3,10 @@
 import { LISTING_INTERVAL_DAYS, MIN_PROFIT_GBP, env } from "./config.mjs";
 import { getJSON, setJSON, listKeys, newId } from "./store.mjs";
 import { research, costUSD } from "./research.mjs";
-import { ebayCompetition } from "./competitors.mjs";
+import { ebayCompetition, ebayMatch } from "./competitors.mjs";
+import { SUPPLIERS, quote, feeRate, fixedFee } from "./catalog.mjs";
 import { priceItem, gbp } from "./pricing.mjs";
-import { sendEmail, proposalEmail } from "./email.mjs";
+import { sendEmail, proposalEmail, queueEmptyEmail } from "./email.mjs";
 import { supplierBrief, recordChecks, getSupplier } from "./suppliers.mjs";
 
 export const dailyBudget = () => parseFloat(env("AGENT_DAILY_BUDGET_USD", "3")) || 3;
@@ -80,6 +81,69 @@ export async function evaluate(c) {
   return { ok: pricing.ok, reasons: pricing.reasons, pricing, competition };
 }
 
+// ---------- Listing queue (products chosen in the screener) ----------
+/** Proposes the best queued product that still beats eBay today. Returns a result, or null if the queue is empty. */
+export async function proposeFromQueue(meta) {
+  const items = [];
+  for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q?.status === "queued") items.push({ k, q }); }
+  if (!items.length) return null;
+  const h = (q) => q.screened?.headroomPence ?? -1;  // products with no rivals found come after ones with proven headroom
+  items.sort((a, b) => h(b.q) - h(a.q));
+  const tried = [];
+  for (const { k, q } of items.slice(0, 6)) {
+    const m = await ebayMatch({ name: q.name, barcode: q.barcode });
+    if (!m.checked) return { sent: false, reason: "couldn't re-check eBay prices (" + (m.reason || "unknown") + ")" };
+    const pr = quote(q, m.cheapest);
+    if (!pr.ok) { await setJSON(k, { ...q, status: "failed_recheck", recheck: { at: new Date().toISOString(), reasons: pr.reasons, cheapest: m.cheapest } }); tried.push(q.name + ": " + pr.reasons.join("; ")); continue; }
+    const s = SUPPLIERS[q.supplier];
+    const known = await getSupplier(s.url);
+    const p = {
+      id: newId("P"), status: "awaiting_approval", source: "catalog", queueKey: k, createdAt: new Date().toISOString(),
+      title: String(q.name).slice(0, 80), searchTerms: q.name, category: q.category || "", sku: q.sku, image: q.image || "", description: q.description || "",
+      supplierProductUrl: s.productUrl(q.sku),
+      supplier: { name: s.name, url: s.url, registered: true, policyEvidence: s.policyEvidence, dispatch: s.dispatch, payment: s.payment, signupNotes: known?.discountNote || "" },
+      supplierCostGBP: Math.round(q.priceExVat * 1.2 * 100) / 100, supplierDeliveryGBP: pr.deliveryGBP, feeRate: feeRate(), fixedFee: fixedFee(),
+      dispatchDays: s.dispatchDays, deliveryDaysMax: s.deliveryDaysMax, deliveryEvidence: "Supplier's published dispatch and delivery terms",
+      costIsEstimate: false, costEvidence: `Supplier product file: £${q.priceExVat.toFixed(2)} ex VAT + 20% VAT; delivery £${pr.deliveryGBP.toFixed(2)} inc VAT for ${Math.round(q.weightKg * 1000)} g`,
+      feeEvidence: `eBay ${(feeRate() * 100).toFixed(1)}% + £${fixedFee().toFixed(2)} per order (screening assumption)`,
+      pricing: pr, estimateCostPence: pr.costPence, competitionSource: "eBay API",
+      competition: `${m.count} comparable new UK Buy It Now listings; cheapest ${m.cheapest != null ? gbp(Math.round(m.cheapest * 100)) : "none found"} incl. postage`,
+      demand: "Not measured automatically – check sold history with the Terapeak link before approving",
+      risks: (q.notes || []).join("; "), sources: [m.searchUrl, ...(m.top || []).map((t) => t.url)].filter(okUrl).slice(0, 5),
+      run: null, history: [{ at: new Date().toISOString(), note: "Proposed from listing queue" }],
+    };
+    await setJSON("proposal/" + p.id, p);
+    await setJSON(k, { ...q, status: "proposed", proposalId: p.id });
+    await sendEmail(proposalEmail(p));
+    await setJSON("meta/agent", { ...meta, running: null, lastProposalAt: p.createdAt, lastRun: { at: p.createdAt, attempts: tried.map((t) => ({ title: t, ok: false, reasons: ["failed eBay re-check"] })).concat([{ title: p.title, ok: true, reasons: [] }]) } });
+    return { sent: true, id: p.id, title: p.title, from: "queue" };
+  }
+  await setJSON("meta/agent", { ...meta, running: null, lastRun: { at: new Date().toISOString(), attempts: tried.map((t) => ({ title: t, ok: false, reasons: ["failed eBay re-check"] })) } });
+  return { sent: false, reason: "queued products no longer beat eBay prices (" + tried.length + " checked)" };
+}
+
+/** Internet (AI) research runs only if you allowed it by email, or AGENT_AI_RESEARCH=1 is set in Netlify. */
+export async function researchAllowed() {
+  if (env("AGENT_AI_RESEARCH") === "1") return true;
+  return (await getJSON("agent/settings"))?.status === "research_on";
+}
+
+/** Emails you once when the queue runs dry (reminds weekly while it stays empty and you haven't chosen). */
+export async function notifyQueueEmpty(detail = "") {
+  const meta = (await getJSON("meta/agent")) || {};
+  const last = meta.queueEmptyNotifiedAt ? Date.parse(meta.queueEmptyNotifiedAt) : 0;
+  const reason = "the listing queue is empty – waiting for you to add products or allow internet research";
+  if (Date.now() - last < 7 * 864e5) return { sent: false, reason };
+  const settings = (await getJSON("agent/settings")) || {};
+  await setJSON("agent/settings", { ...settings, status: "awaiting_choice", askedAt: new Date().toISOString(),
+    history: [...(settings.history || []), { at: new Date().toISOString(), note: "Asked: queue empty" }] });
+  let counts = {};
+  for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q) counts[q.status] = (counts[q.status] || 0) + 1; }
+  await sendEmail(queueEmptyEmail({ counts, detail }));
+  await setJSON("meta/agent", { ...meta, running: null, queueEmptyNotifiedAt: new Date().toISOString() });
+  return { sent: false, notified: true, reason };
+}
+
 /** Run one cycle: keep researching until a candidate passes, the run's time is up, or today's budget is spent.
  *  Returns { sent } or { sent:false, chain } – chain=true means "start another run, budget remains". */
 export async function runCycle({ force = false } = {}) {
@@ -87,6 +151,14 @@ export async function runCycle({ force = false } = {}) {
   if (!force && !due.due) return { sent: false, reason: due.reason };
   if (force && /in progress|waiting for you|budget/.test(due.reason)) return { sent: false, reason: due.reason };
 
+  {
+    const meta0 = (await getJSON("meta/agent")) || {};
+    const fromQueue = await proposeFromQueue(meta0);
+    if (fromQueue?.sent || /couldn't re-check/.test(fromQueue?.reason || "")) return fromQueue;
+    // Queue is empty (or nothing in it beats eBay any more).
+    if (!(await researchAllowed())) return await notifyQueueEmpty(fromQueue?.reason);
+    if (!env("ANTHROPIC_API_KEY")) return { sent: false, reason: "internet research is allowed but ANTHROPIC_API_KEY is not set" };
+  }
   const started = Date.now();
   let meta = (await getJSON("meta/agent")) || {};
   await setJSON("meta/agent", { ...meta, running: new Date().toISOString() });

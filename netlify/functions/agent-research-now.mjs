@@ -14,13 +14,13 @@ const text = (s, status = 200) => new Response(s, { status, headers: { "Content-
 export default async (req) => {
   const key = new URL(req.url).searchParams.get("key") || "";
   if (!env("AGENT_SECRET") || !same(key, env("AGENT_SECRET"))) return text("Not found", 404);
-  const missing = ["ANTHROPIC_API_KEY", "RESEND_API_KEY"].filter((k) => !env(k));
+  const missing = ["RESEND_API_KEY"].concat(env("AGENT_AI_RESEARCH") === "1" ? ["ANTHROPIC_API_KEY"] : []).filter((k) => !env(k));
   if (missing.length) return text("Missing settings: " + missing.join(", "), 503);
   const due = await proposalDue();
   if (/in progress|waiting for you|budget/.test(due.reason)) return text("Not started: " + due.reason + ".");
   const status = await startResearch(true);
   if (status !== 202 && status !== 200) return text("Couldn't start the research job (status " + status + "). Background jobs may not be available on this Netlify plan.", 502);
-  return text("Research started. A proposal email should arrive in about 5–15 minutes. If nothing suitable is found, no email is sent; check again later with /agent/status.");
+  return text("Started. The agent takes the best product from your listing queue, re-checks its eBay price and emails you a proposal within a few minutes. If the queue is empty, nothing is sent – check /agent/status.");
 };
 
 export const config = { path: "/agent/research-now" };

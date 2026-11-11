@@ -6,7 +6,7 @@ import { startResearch } from "../lib/agent/trigger.mjs";
 
 export default async () => {
   if (env("AGENT_PAUSED") === "1") { console.log("agent paused"); return; }
-  if (!env("ANTHROPIC_API_KEY") || !env("RESEND_API_KEY") || !env("AGENT_SECRET")) { console.log("agent not configured"); return; }
+  if (!env("RESEND_API_KEY") || !env("AGENT_SECRET")) { console.log("agent not configured"); return; }
   const due = await proposalDue();
   console.log("proposal due?", JSON.stringify(due));
   if (due.due) console.log("started research:", await startResearch(false));
