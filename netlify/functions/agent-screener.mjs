@@ -28,6 +28,7 @@ const clean = (it) => ({
   discontinued: !!it.discontinued,
   status: String(it.status || ""), forSale: String(it.forSale || ""), stockFlag: String(it.stockFlag || ""),
   barcode: String(it.barcode || "").slice(0, 20),
+  material: String(it.material || "").slice(0, 80),
   image: /^https:\/\//.test(it.image || "") ? String(it.image).slice(0, 500) : "",
   description: String(it.description || "").slice(0, 1500),
 });
@@ -149,10 +150,10 @@ function normalise(text) {
   if (!rows.length) return [];
   if ("Item No" in rows[0]) return rows.map((r) => ({ supplier: "sd", sku: r["Item No"], name: r["Item Name"], category: "", priceExVat: num(r["Price"]), rrp: num(r["RRP"]),
     weightKg: (num(r["Packed Weight"]) || num(r["Individual Weight"])) / 1000, stock: num(r["Stock Level"]), moq: num(r["Min Order Qty"]) || 1,
-    discontinued: String(r["Discontinued"]).trim().toLowerCase() === "true", barcode: r["Barcode"], image: (r["URL Links"] || "").trim().split(/[,|\\s]+/)[0], description: r["Online Description"] }));
+    discontinued: String(r["Discontinued"]).trim().toLowerCase() === "true", barcode: r["Barcode"], material: r["Material"], image: (r["URL Links"] || "").trim().split(/[,|\\s]+/)[0], description: r["Online Description"] }));
   if ("Product code" in rows[0]) return rows.map((r) => ({ supplier: "aw", sku: r["Product code"], name: r["Unit Name"], category: (r["Department"] || "") + " > " + (r["Subdepartment"] || ""), department: r["Department"],
     priceExVat: num(r["Unit price"]), rrp: num(r["Unit RRP"]), weightKg: num(r["Package weight (shipping)"]), stock: num(r["Available Quantity"]), moq: num(r["Units per outer"]) || 1,
-    status: r["Status"], forSale: r["For sale"], stockFlag: r["Stock"], barcode: r["Barcode"], image: (r["Images"] || "").trim().split(/[,|\\s]+/)[0], description: r["Webpage description (plain text)"] }));
+    status: r["Status"], forSale: r["For sale"], stockFlag: r["Stock"], barcode: r["Barcode"], material: r["Materials/Ingredients"], image: (r["Images"] || "").trim().split(/[,|\\s]+/)[0], description: r["Webpage description (plain text)"] }));
   throw new Error("Unrecognised file: expected Something Different (Item No…) or AW (Product code…) columns");
 }
 async function call(op, items, extra) {

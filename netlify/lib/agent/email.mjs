@@ -168,3 +168,30 @@ export function queueEmptyEmail({ counts = {}, detail = "" }) {
 ${btn("Allow internet research", actionUrl("agent", "settings", "allow-research", 14), true)}${btn("Not now – I'll add products", actionUrl("agent", "settings", "decline-research", 14))}`);
   return { subject: "Wufa agent: listing queue is empty – what next?", html, text: "The listing queue is empty. Add products with the screener, or allow internet research from the email buttons." };
 }
+
+/* ---------- 6. Listed / listing failed ---------- */
+export function listedEmail(p, r) {
+  const html = wrap("Listed on eBay: " + (p.listingTitle || p.title), `
+<table style="border-collapse:collapse;font-size:14px">
+${row("Listing", link("View on eBay (item " + r.listingId + ")", r.url))}
+${row("Price", "<b>" + gbp(p.pricing.pricePence) + "</b> with free UK postage")}
+${row("Profit per sale", gbp(p.pricing.profitPence))}
+${row("Quantity listed", esc(r.quantity))}
+${row("Category", esc(r.categoryName))}
+${row("Your eBay SKU", esc(r.sku))}
+</table>
+<p style="font-size:13px;color:#625f58">When it sells, you'll get an order pack email to place the order with ${esc(p.supplier.name)} (Phase 5). Until then, check Seller Hub for orders.</p>`);
+  return { subject: "Listed on eBay: " + (p.listingTitle || p.title) + " – " + gbp(p.pricing.pricePence), html, text: "Listed: " + r.url };
+}
+export function listFailedEmail(p, e) {
+  const html = wrap("Couldn't list on eBay: " + (p.listingTitle || p.title), `
+<p><b>What happened:</b> ${esc(e.message)}</p>
+${e.fix ? `<p><b>How to fix it:</b> ${esc(e.fix)}</p>` : ""}
+<p style="margin:16px 0 8px">Once fixed, press Try again (you can also edit the title on the next page).</p>
+${btn("Try again", actionUrl("proposal", p.id, "retry-list", 30), true)}${btn("Drop this product", actionUrl("proposal", p.id, "drop", 30))}`);
+  return { subject: "Couldn't list on eBay: " + (p.listingTitle || p.title), html, text: "Listing failed: " + e.message + (e.fix ? " – " + e.fix : "") };
+}
+export function reconnectEmail(expires) {
+  const html = wrap("Please reconnect eBay selling access", `<p>The agent's access to your eBay account expires on <b>${esc(String(expires).slice(0, 10))}</b>. Open your connect page (<i>/agent/ebay-connect</i> with your key) and sign in to eBay again – it takes a minute.</p>`);
+  return { subject: "Wufa agent: reconnect eBay before " + String(expires).slice(0, 10), html, text: "Reconnect eBay selling access before " + expires };
+}

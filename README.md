@@ -37,3 +37,13 @@ Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (d
 - `/agent/screener?key=<AGENT_SECRET>` – upload Something Different (`DropshipStockFull.txt`) and/or AW (`shop_awd.csv`) files. The browser parses them; the server applies the rules (`netlify/lib/agent/catalog.mjs`: allowed categories, VAT on cost and delivery, supplier delivery bands, £1.50 profit), then checks survivors on eBay UK (`ebayMatch`: barcode + title matches, own listings ignored). Tick winners → "Add selected to listing queue".
 - The agent proposes the best queued product every 3 days (re-checking its eBay price first). Approving a queued product goes straight to `ready_to_list` (known supplier cost).
 - When the queue runs out the agent emails you once (weekly reminder): add products with the screener, or press "Allow internet research" (stored in Blobs `agent/settings`; "Stop internet research" button on research proposals). `AGENT_AI_RESEARCH=1` forces it on. Screening uses ~2 eBay API calls per product (Browse API limit ~5,000/day).
+
+## Dropship agent (Phase 4: listing on eBay)
+- One-time setup: in the eBay developer portal (User Tokens → "Get a Token from eBay via Your Application") add a redirect URL with
+  accept URL `https://wufa-shop.netlify.app/agent/ebay-callback`; copy its **RuName** into Netlify as `EBAY_RUNAME`.
+- In Seller Hub → Business policies create postage policies named **Wufa DS 1 day** (Something Different) and **Wufa DS 2 days** (AW),
+  or set `EBAY_POSTAGE_POLICY_SD` / `EBAY_POSTAGE_POLICY_AW` to your own names. A return and payment policy must exist.
+- Open `/agent/ebay-connect?key=<AGENT_SECRET>` and sign in to eBay as nuvr_61. Access lasts ~18 months; the agent emails before it expires.
+- Approving a queue proposal (title editable) lists it on eBay within minutes and emails the link. If eBay refuses, you get an email
+  with the fix and a "Try again" button. Agent listings stay off the website until website orders for dropship items are automated
+  (`AGENT_SITE_DROPSHIP=1`, Phase 3). Optional: `SD_POSTCODE`, `AW_POSTCODE` for the item location.

@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { env } from "../lib/agent/config.mjs";
 import { getJSON, listKeys } from "../lib/agent/store.mjs";
 import { proposalDue, dailyBudget } from "../lib/agent/pipeline.mjs";
+import { sellerStatus } from "../lib/agent/ebayuser.mjs";
 
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
@@ -33,6 +34,9 @@ export default async (req) => {
   lines.push("", "Listing queue: " + (Object.keys(qc).length ? Object.entries(qc).map(([k, v]) => v + " " + k.replace(/_/g, " ")).join(", ") : "empty – add products with /agent/screener"));
   const st = (await getJSON("agent/settings"))?.status;
   lines.push("Internet research: " + (env("AGENT_AI_RESEARCH") === "1" ? "on (Netlify setting)" : st === "research_on" ? "on (you allowed it by email)" : st === "awaiting_choice" ? "off – waiting for your choice (email sent)" : "off"));
+  const ss = await sellerStatus().catch(() => ({ connected: false }));
+  lines.push("eBay selling access: " + (ss.connected ? "connected (valid until " + ss.refreshExpires.slice(0, 10) + ")" : "NOT connected – open /agent/ebay-connect"));
+  lines.push("Agent listings on eBay: " + (await listKeys("listing/")).length);
   lines.push("", "Proposals:");
   for (const k of await listKeys("proposal/")) {
     if (k.startsWith("proposal/TEST-")) continue;
