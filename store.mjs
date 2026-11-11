@@ -33,6 +33,17 @@ export async function listKeys(prefix) {
   return items.map((b) => b.key).sort();
 }
 
+/** Reads every item under a prefix, many at a time (fast even with hundreds of items). Returns [{ k, v }]. */
+export async function getAll(prefix, concurrency = 40) {
+  const keys = await listKeys(prefix);
+  const out = new Array(keys.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, keys.length) }, async () => {
+    while (i < keys.length) { const n = i++; out[n] = { k: keys[n], v: await getJSON(keys[n]).catch(() => null) }; }
+  }));
+  return out.filter((x) => x.v);
+}
+
 // Append a line to an item's history so every decision can be traced later.
 export async function update(key, changes, note) {
   const cur = (await getJSON(key)) || {};

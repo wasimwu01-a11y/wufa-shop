@@ -1,7 +1,7 @@
 // /agent/status?key=<AGENT_SECRET>  – plain-text summary of what the agent is doing.
 import { timingSafeEqual } from "node:crypto";
 import { env } from "../lib/agent/config.mjs";
-import { getJSON, listKeys } from "../lib/agent/store.mjs";
+import { getJSON, listKeys, getAll } from "../lib/agent/store.mjs";
 import { proposalDue, dailyBudget } from "../lib/agent/pipeline.mjs";
 import { sellerStatus } from "../lib/agent/ebayuser.mjs";
 
@@ -30,7 +30,7 @@ export default async (req) => {
     for (const a of meta.lastRun.attempts || []) lines.push("  - " + (a.title || "(nothing found)") + ": " + (a.ok ? "passed" : a.reasons.join("; ")));
   }
   const qc = {};
-  for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q) qc[q.status] = (qc[q.status] || 0) + 1; }
+  for (const { v: q } of await getAll("queue/")) qc[q.status] = (qc[q.status] || 0) + 1;
   lines.push("", "Listing queue: " + (Object.keys(qc).length ? Object.entries(qc).map(([k, v]) => v + " " + k.replace(/_/g, " ")).join(", ") : "empty – add products with /agent/screener"));
   const st = (await getJSON("agent/settings"))?.status;
   lines.push("Internet research: " + (env("AGENT_AI_RESEARCH") === "1" ? "on (Netlify setting)" : st === "research_on" ? "on (you allowed it by email)" : st === "awaiting_choice" ? "off – waiting for your choice (email sent)" : "off"));
@@ -38,9 +38,8 @@ export default async (req) => {
   lines.push("eBay selling access: " + (ss.connected ? "connected (valid until " + ss.refreshExpires.slice(0, 10) + ")" : "NOT connected – open /agent/ebay-connect"));
   lines.push("Agent listings on eBay: " + (await listKeys("listing/")).length);
   lines.push("", "Proposals:");
-  for (const k of await listKeys("proposal/")) {
+  for (const { k, v: p } of await getAll("proposal/")) {
     if (k.startsWith("proposal/TEST-")) continue;
-    const p = await getJSON(k);
     lines.push(`  ${p.createdAt?.slice(0, 10) || ""}  ${p.status.padEnd(22)} ${p.title}`);
   }
   return new Response(lines.join("\n"), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });

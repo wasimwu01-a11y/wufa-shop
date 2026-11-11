@@ -6,7 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 import { env } from "../lib/agent/config.mjs";
 import { exclusion, quote, notes, queueKey, SUPPLIERS } from "../lib/agent/catalog.mjs";
 import { ebayMatch } from "../lib/agent/competitors.mjs";
-import { getJSON, setJSON, listKeys, update } from "../lib/agent/store.mjs";
+import { getJSON, setJSON, listKeys, getAll, update } from "../lib/agent/store.mjs";
 import { startListing } from "../lib/agent/trigger.mjs";
 
 const same = (a, b) => {
@@ -43,19 +43,18 @@ async function op(body) {
   if (body.op === "refresh") {
     // Updates photos/description of products already in the queue; listed ones are re-sent to eBay.
     let updated = 0; const relist = [];
-    for (const it of items) {
+    await Promise.all(items.map(async (it) => {
       const k = queueKey(it); const cur = await getJSON(k);
-      if (!cur || cur.status === "removed") continue;
+      if (!cur || cur.status === "removed") return;
       const patch = Object.fromEntries(DETAIL_FIELDS.filter((f) => it[f] && (Array.isArray(it[f]) ? it[f].length : true)).map((f) => [f, it[f]]));
       await setJSON(k, { ...cur, ...patch, detailsUpdatedAt: new Date().toISOString() });
       updated++;
       if (cur.status === "listed") relist.push(k);
-    }
+    }));
     let resent = 0;
     if (relist.length) {
-      for (const pk of await listKeys("proposal/")) {
-        const pr = await getJSON(pk);
-        if (pr && pr.status === "listed" && relist.includes(pr.queueKey)) { await update(pk, { status: "ready_to_list", revise: true }, "Photos/description refreshed – updating eBay listing"); resent++; }
+      for (const { k: pk, v: pr } of await getAll("proposal/")) {
+        if (pr.status === "listed" && relist.includes(pr.queueKey)) { await update(pk, { status: "ready_to_list", revise: true }, "Photos/description refreshed – updating eBay listing"); resent++; }
       }
       if (resent) await startListing().catch(() => {});
     }
@@ -98,7 +97,7 @@ async function op(body) {
   }
   if (body.op === "queueList") {
     const list = [];
-    for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q) list.push({ key: k, sku: q.sku, name: q.name, supplier: q.supplier, status: q.status, headroomPence: q.screened?.headroomPence ?? null }); }
+    for (const { k, v: q } of await getAll("queue/")) { list.push({ key: k, sku: q.sku, name: q.name, supplier: q.supplier, status: q.status, headroomPence: q.screened?.headroomPence ?? null }); }
     return { list };
   }
   if (body.op === "queueRemove") {
@@ -113,7 +112,7 @@ async function op(body) {
 
 export async function queuedCount() {
   let n = 0;
-  for (const k of await listKeys("queue/")) if ((await getJSON(k))?.status === "queued") n++;
+  for (const { v } of await getAll("queue/")) if (v.status === "queued") n++;
   return n;
 }
 
