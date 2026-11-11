@@ -50,11 +50,23 @@ async function policies(sup) {
   return { fulfillmentPolicyId: ful.fulfillmentPolicyId, returnPolicyId: ret.returnPolicyId, paymentPolicyId: pay.paymentPolicyId };
 }
 
-async function category(title) {
+async function categories(title) {
   const r = await ebayGet(`/commerce/taxonomy/v1/category_tree/${TREE}/get_category_suggestions?q=` + encodeURIComponent(title.slice(0, 100)));
-  const c = r.ok && r.body.categorySuggestions?.[0]?.category;
-  if (!c) throw fail("eBay couldn't suggest a category for this title.", "Edit the title to describe the item plainly and press Try again.");
-  return { id: c.categoryId, name: c.categoryName };
+  const list = (r.ok ? r.body.categorySuggestions || [] : []).map((x) => x.category).filter(Boolean).slice(0, 5);
+  if (!list.length) throw fail("eBay couldn't suggest a category for this title.", "Edit the title to describe the item plainly and press Try again.");
+  return list.map((c) => ({ id: c.categoryId, name: c.categoryName }));
+}
+
+/** Picks the first suggested category whose required item specifics we can fill. */
+async function pickCategory(title, q) {
+  const tried = [];
+  for (const c of await categories(title)) {
+    const spec = await itemSpecifics(c.id, c.name, q, title);
+    if (!spec.missing.length) return { cat: c, spec };
+    tried.push(`"${c.name}" needs ${spec.missing.join(", ")}`);
+  }
+  throw fail("eBay requires item specifics the agent couldn't work out: " + tried.join("; ") + ".",
+    "Edit the title to include them (e.g. add the size, or \"One Size\") and press Try again, or list this one manually.");
 }
 
 const words = (s) => String(s).toLowerCase();
@@ -77,6 +89,10 @@ async function itemSpecifics(catId, catName, it, title) {
     if (!val && /^(colou?r)$/i.test(name) && values.includes("Multicoloured")) val = required ? "Multicoloured" : null;
     if (!val && /^material$/i.test(name) && it.material && freeText) val = it.material.slice(0, 65);
     if (!val && /^type$/i.test(name) && freeText) val = catName;
+    if (!val && /^size$/i.test(name) && /\b(one|standard|free|universal)[ -]size\b|\bone size fits\b/.test(text)) {
+      const one = values.find((v) => /^one size/i.test(v));
+      val = one || (freeText || !values.length ? "One Size" : null);
+    }
     if (!val && /^(department)$/i.test(name) && values.includes("Unisex Adults")) val = "Unisex Adults";
     if (val) aspects[name] = [val];
     else if (required) missing.push(name);
@@ -99,9 +115,7 @@ export async function listProposal(p) {
   if (!q.image) throw fail("The supplier file has no photo for this product.", "List it manually with your own photos.");
   const title = String(p.listingTitle || p.title).slice(0, 80);
   const sku = ebaySku(q.supplier, q.sku);
-  const [loc, pol, cat] = await Promise.all([ensureLocation(q.supplier), policies(q.supplier), category(title)]);
-  const spec = await itemSpecifics(cat.id, cat.name, q, title);
-  if (spec.missing.length) throw fail(`eBay requires these item specifics for "${cat.name}": ${spec.missing.join(", ")}.`, "Edit the title to include them (e.g. size or type) and press Try again, or list this one manually.");
+  const [loc, pol, { cat, spec }] = await Promise.all([ensureLocation(q.supplier), policies(q.supplier), pickCategory(title, q)]);
   const qty = Math.max(1, Math.min(5, Math.floor((q.stock || 0) - 2)));
   const inv = await sell("PUT", "/sell/inventory/v1/inventory_item/" + encodeURIComponent(sku), {
     availability: { shipToLocationAvailability: { quantity: qty } },
