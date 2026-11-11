@@ -17,7 +17,7 @@ export default async (req) => {
   const lines = [
     "Wufa agent status – " + new Date().toUTCString(),
     "",
-    "Settings: " + ["ANTHROPIC_API_KEY", "RESEND_API_KEY", "EBAY_CLIENT_ID"].map((k) => k + (env(k) ? " ✓" : " ✗")).join(", "),
+    "Settings: " + ["RESEND_API_KEY", "EBAY_CLIENT_ID", "ANTHROPIC_API_KEY"].map((k) => k + (env(k) ? " ✓" : " ✗")).join(", "),
     "Paused: " + (env("AGENT_PAUSED") === "1" ? "yes" : "no"),
     "Next proposal due: " + (due.due ? "yes (next daily run at 07:10 UTC)" : "no – " + due.reason),
     "Research running: " + (meta.running ? "since " + meta.running : "no"),
@@ -28,6 +28,11 @@ export default async (req) => {
     lines.push("", "Last run: " + meta.lastRun.at + (meta.lastRun.error ? "  ERROR: " + meta.lastRun.error : ""));
     for (const a of meta.lastRun.attempts || []) lines.push("  - " + (a.title || "(nothing found)") + ": " + (a.ok ? "passed" : a.reasons.join("; ")));
   }
+  const qc = {};
+  for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q) qc[q.status] = (qc[q.status] || 0) + 1; }
+  lines.push("", "Listing queue: " + (Object.keys(qc).length ? Object.entries(qc).map(([k, v]) => v + " " + k.replace(/_/g, " ")).join(", ") : "empty – add products with /agent/screener"));
+  const st = (await getJSON("agent/settings"))?.status;
+  lines.push("Internet research: " + (env("AGENT_AI_RESEARCH") === "1" ? "on (Netlify setting)" : st === "research_on" ? "on (you allowed it by email)" : st === "awaiting_choice" ? "off – waiting for your choice (email sent)" : "off"));
   lines.push("", "Proposals:");
   for (const k of await listKeys("proposal/")) {
     if (k.startsWith("proposal/TEST-")) continue;

@@ -59,8 +59,9 @@ const textOf = (lines) => lines.filter(Boolean).join("\n");
 export function proposalEmail(p) {
   const pr = p.pricing;
   const html = wrap("New product proposal: " + p.title, `
+${p.image && /^https:\/\//.test(p.image) ? `<p><img src="${esc(p.image)}" alt="" width="220" style="max-width:100%;border-radius:8px;border:1px solid #e4e1da"></p>` : ""}
 <table style="border-collapse:collapse;font-size:14px">
-${row("Product", link(p.title, p.supplierProductUrl))}
+${row("Product", link(p.title, p.supplierProductUrl) + (p.sku ? " <span style=\"color:#625f58\">(" + esc(p.sku) + ")</span>" : ""))}
 ${row("Supplier", link(p.supplier.name, p.supplier.url) + (p.supplier.registered ? " (account already set up)" : " (needs registration)"))}
 ${row("Why it meets eBay rules", esc(p.supplier.policyEvidence))}
 ${row("Dispatch", esc(p.supplier.dispatch))}
@@ -83,7 +84,8 @@ ${p.sources?.length ? row("Sources", p.sources.map((u, i) => link("source " + (i
 ${p.run ? row("Research cost", "about $" + Number(p.run.costUSD).toFixed(2) + " (" + esc(p.run.usage.searches) + " searches, " + esc(p.run.usage.fetches) + " pages read)") : ""}
 </table>
 <p style="margin:20px 0 8px">Approve to continue, or reject to drop it.</p>
-${btn("Approve", actionUrl("proposal", p.id, "approve", APPROVAL_TTL_DAYS), true)}${btn("Reject", actionUrl("proposal", p.id, "reject", APPROVAL_TTL_DAYS))}`);
+${btn("Approve", actionUrl("proposal", p.id, "approve", APPROVAL_TTL_DAYS), true)}${btn("Reject", actionUrl("proposal", p.id, "reject", APPROVAL_TTL_DAYS))}
+${p.source !== "catalog" ? `<p style="margin:14px 0 6px;font-size:13px;color:#625f58">This product came from internet research.</p>${btn("Stop internet research", actionUrl("agent", "settings", "stop-research", 30))}` : ""}`);
   const text = textOf([
     "New product proposal: " + p.title, "Supplier: " + p.supplier.name, "Price: " + gbp(pr.pricePence), "Profit: " + gbp(pr.profitPence),
     "Open the email in HTML to approve or reject.",
@@ -154,4 +156,15 @@ ${btn("Paid – enter tracking", actionUrl("order", o.id, "paid", ORDER_TTL_DAYS
     "Deliver to:", a.name, a.line1, a.line2, a.city, a.postcode, a.country, "Phone: " + (a.phone || "-"),
   ]);
   return { subject: "Order to place: " + o.title + " × " + o.quantity + " (" + o.channel + ")", html, text };
+}
+
+/* ---------- 5. Listing queue is empty ---------- */
+export function queueEmptyEmail({ counts = {}, detail = "" }) {
+  const c = (k) => counts[k] || 0;
+  const html = wrap("The listing queue has run out", `
+<p>There are no products left in the listing queue${detail ? " (" + esc(detail) + ")" : ""}. So far: <b>${c("approved")}</b> approved, <b>${c("rejected")}</b> rejected, <b>${c("failed_recheck")}</b> dropped because eBay prices moved.</p>
+<p style="margin:16px 0 6px"><b>Option 1 – add more products (free).</b> Download fresh product files from Something Different and AW (or a new supplier), open your screener page (<i>/agent/screener</i> with your key), run it and add the winners to the queue. Proposals restart automatically.</p>
+<p style="margin:16px 0 6px"><b>Option 2 – let the agent research the internet</b> for new UK suppliers and products. This uses your Anthropic credit (capped at the daily budget) and every product still needs your approval.</p>
+${btn("Allow internet research", actionUrl("agent", "settings", "allow-research", 14), true)}${btn("Not now – I'll add products", actionUrl("agent", "settings", "decline-research", 14))}`);
+  return { subject: "Wufa agent: listing queue is empty – what next?", html, text: "The listing queue is empty. Add products with the screener, or allow internet research from the email buttons." };
 }

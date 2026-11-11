@@ -32,3 +32,8 @@ Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (d
 - Supplier memory (`netlify/lib/agent/suppliers.mjs`): every supplier checked is remembered with its verdict; `/agent/suppliers?key=<AGENT_SECRET>` lets you mark accounts and trade discounts (your settings are never overwritten). An empty run waits 3 days before retrying (research-now still works).
 - Persistent research: a run keeps trying new candidates (feedback on each failure) until one passes, up to ~11 minutes; then it chains another run while today's budget remains. `AGENT_DAILY_BUDGET_USD` (default 3), `AGENT_MAX_ATTEMPTS` per run (default 8).
 - Rule 8: if the supplier sells the same item on eBay, our price must be at or below its own eBay price.
+
+## Product screener + listing queue
+- `/agent/screener?key=<AGENT_SECRET>` – upload Something Different (`DropshipStockFull.txt`) and/or AW (`shop_awd.csv`) files. The browser parses them; the server applies the rules (`netlify/lib/agent/catalog.mjs`: allowed categories, VAT on cost and delivery, supplier delivery bands, £1.50 profit), then checks survivors on eBay UK (`ebayMatch`: barcode + title matches, own listings ignored). Tick winners → "Add selected to listing queue".
+- The agent proposes the best queued product every 3 days (re-checking its eBay price first). Approving a queued product goes straight to `ready_to_list` (known supplier cost).
+- When the queue runs out the agent emails you once (weekly reminder): add products with the screener, or press "Allow internet research" (stored in Blobs `agent/settings`; "Stop internet research" button on research proposals). `AGENT_AI_RESEARCH=1` forces it on. Screening uses ~2 eBay API calls per product (Browse API limit ~5,000/day).
