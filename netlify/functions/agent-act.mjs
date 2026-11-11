@@ -109,7 +109,9 @@ export default async (req) => {
            <label for="delivery">Supplier's dropship delivery charge per order, including VAT (£)</label><input id="delivery" name="delivery" required inputmode="decimal" pattern="\\d{1,3}(\\.\\d{1,2})?" placeholder="0 if free">`
         : t.k === "proposal" && (t.a === "approve" || t.a === "retry-list") && item.source === "catalog"
         ? `<label for="lt">eBay listing title (max 80 characters – edit if you like)</label><input id="lt" name="listingTitle" maxlength="80" value="${esc(item.listingTitle || item.title)}">
-           <p class="m">Avoid health or healing claims and brand names you don't own.</p>`
+           <p class="m">Avoid health or healing claims and brand names you don't own.</p>
+           <label for="ch">eBay category – optional (a few words, e.g. "sarong" or "beach cover up")</label><input id="ch" name="categoryHint" maxlength="60" value="${esc(item.categoryHint || "")}">
+           <p class="m">Leave blank to let eBay choose from the title. Use it if eBay keeps picking the wrong category.</p>`
         : t.a === "cant-fulfil"
         ? `<label for="reason">Reason (optional)</label><input id="reason" name="reason" maxlength="200">`
         : "";
@@ -196,6 +198,9 @@ export default async (req) => {
     if (t.k === "proposal" && form.get("listingTitle")) {
       const lt = String(form.get("listingTitle")).replace(/\s+/g, " ").trim().slice(0, 80);
       if (lt.length >= 10) changes = { ...changes, listingTitle: lt };
+    }
+    if (t.k === "proposal" && form.has("categoryHint")) {
+      changes = { ...changes, categoryHint: String(form.get("categoryHint")).replace(/\s+/g, " ").trim().slice(0, 60) };
     }
     const saved = await update(t.k + "/" + t.id, changes, note);
     if (t.k === "proposal" && item.queueKey) await update(item.queueKey, { status: changes.status === "rejected" ? "rejected" : changes.status === "ready_to_list" ? "approved" : "proposed" }, note);

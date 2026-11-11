@@ -50,23 +50,23 @@ async function policies(sup) {
   return { fulfillmentPolicyId: ful.fulfillmentPolicyId, returnPolicyId: ret.returnPolicyId, paymentPolicyId: pay.paymentPolicyId };
 }
 
-async function categories(title) {
-  const r = await ebayGet(`/commerce/taxonomy/v1/category_tree/${TREE}/get_category_suggestions?q=` + encodeURIComponent(title.slice(0, 100)));
+async function categories(query) {
+  const r = await ebayGet(`/commerce/taxonomy/v1/category_tree/${TREE}/get_category_suggestions?q=` + encodeURIComponent(query.slice(0, 100)));
   const list = (r.ok ? r.body.categorySuggestions || [] : []).map((x) => x.category).filter(Boolean).slice(0, 5);
   if (!list.length) throw fail("eBay couldn't suggest a category for this title.", "Edit the title to describe the item plainly and press Try again.");
   return list.map((c) => ({ id: c.categoryId, name: c.categoryName }));
 }
 
 /** Picks the first suggested category whose required item specifics we can fill. */
-async function pickCategory(title, q) {
+async function pickCategory(title, q, hint) {
   const tried = [];
-  for (const c of await categories(title)) {
-    const spec = await itemSpecifics(c.id, c.name, q, title);
+  for (const c of await categories(hint || title)) {
+    const spec = await itemSpecifics(c.id, c.name, q, title + " " + (hint || ""));
     if (!spec.missing.length) return { cat: c, spec };
     tried.push(`"${c.name}" needs ${spec.missing.join(", ")}`);
   }
   throw fail("eBay requires item specifics the agent couldn't work out: " + tried.join("; ") + ".",
-    "Edit the title to include them (e.g. add the size, or \"One Size\") and press Try again, or list this one manually.");
+    "Press Try again and fill in the eBay category box (e.g. \"sarong\"), and/or add the missing details to the title (e.g. \"One Size\"). Or list this one manually.");
 }
 
 const words = (s) => String(s).toLowerCase();
@@ -115,7 +115,7 @@ export async function listProposal(p) {
   if (!q.image) throw fail("The supplier file has no photo for this product.", "List it manually with your own photos.");
   const title = String(p.listingTitle || p.title).slice(0, 80);
   const sku = ebaySku(q.supplier, q.sku);
-  const [loc, pol, { cat, spec }] = await Promise.all([ensureLocation(q.supplier), policies(q.supplier), pickCategory(title, q)]);
+  const [loc, pol, { cat, spec }] = await Promise.all([ensureLocation(q.supplier), policies(q.supplier), pickCategory(title, q, p.categoryHint)]);
   const qty = Math.max(1, Math.min(5, Math.floor((q.stock || 0) - 2)));
   const inv = await sell("PUT", "/sell/inventory/v1/inventory_item/" + encodeURIComponent(sku), {
     availability: { shipToLocationAvailability: { quantity: qty } },
