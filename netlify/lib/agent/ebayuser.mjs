@@ -70,7 +70,7 @@ async function userToken() {
 
 /** Calls a Sell API as Wufa. Returns { ok, status, body }. */
 export async function sell(method, path, body) {
-  const res = await fetch(API() + path, {
+  const res = await fetch((/^https?:/.test(path) ? "" : API()) + path, {
     method,
     headers: {
       Authorization: "Bearer " + (await userToken()),
@@ -84,8 +84,23 @@ export async function sell(method, path, body) {
   const text = await res.text();
   let j = null;
   try { j = text ? JSON.parse(text) : null; } catch { j = { raw: text.slice(0, 500) }; }
-  return { ok: res.ok, status: res.status, body: j };
+  return { ok: res.ok, status: res.status, body: j, location: res.headers.get("location") };
 }
 
-export const ebayErrors = (r) => (r.body?.errors || []).map((e) => e.longMessage || e.message).filter(Boolean).join(" | ") || "HTTP " + r.status;
+/** Copies a supplier photo into eBay's picture service (Media API) and returns the eBay-hosted URL. */
+export async function ebayImage(url) {
+  const base = env("EBAY_MEDIA_BASE", "https://apim.ebay.com");
+  try { return await copyImage(base, url); } catch (e) { return { url, error: String(e.message || e) }; }
+}
+async function copyImage(base, url) {
+  const r = await sell("POST", base + "/commerce/media/v1_beta/image/create_image_from_url", { imageUrl: url });
+  if (r.ok && r.body?.imageUrl) return { url: r.body.imageUrl };
+  if (r.ok && r.location) {
+    const g = await sell("GET", /^https?:/.test(r.location) ? r.location : base + r.location);
+    if (g.ok && g.body?.imageUrl) return { url: g.body.imageUrl };
+  }
+  return { url, error: ebayErrors(r) };
+}
+
+export const ebayErrors = (r) => (r.body?.errors || []).map((e) => (e.longMessage || e.message || "") + (e.errorId ? " [eBay error " + e.errorId + (e.parameters?.length ? ": " + e.parameters.map((x) => x.name + "=" + x.value).join(", ") : "") + "]" : "")).filter(Boolean).join(" | ") || "HTTP " + r.status;
 export { siteUrl };

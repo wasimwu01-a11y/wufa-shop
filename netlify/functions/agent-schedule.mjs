@@ -3,7 +3,7 @@
 import { env } from "../lib/agent/config.mjs";
 import { proposalDue } from "../lib/agent/pipeline.mjs";
 import { startResearch, startListing } from "../lib/agent/trigger.mjs";
-import { getJSON, setJSON, listKeys } from "../lib/agent/store.mjs";
+import { getJSON, setJSON, getAll } from "../lib/agent/store.mjs";
 import { sellerStatus } from "../lib/agent/ebayuser.mjs";
 import { sendEmail, reconnectEmail } from "../lib/agent/email.mjs";
 
@@ -11,7 +11,7 @@ export default async () => {
   if (env("AGENT_PAUSED") === "1") { console.log("agent paused"); return; }
   if (!env("RESEND_API_KEY") || !env("AGENT_SECRET")) { console.log("agent not configured"); return; }
   // Anything approved but not yet listed (e.g. a failed background job) gets another go.
-  for (const k of await listKeys("proposal/")) { if ((await getJSON(k))?.status === "ready_to_list") { console.log("listing job:", await startListing()); break; } }
+  for (const { v } of await getAll("proposal/")) { if (v.status === "ready_to_list") { console.log("listing job:", await startListing()); break; } }
   // Remind about reconnecting eBay ~2 weeks before the access expires (weekly).
   const s = await sellerStatus().catch(() => ({}));
   const meta = (await getJSON("meta/agent")) || {};

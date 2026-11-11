@@ -1,7 +1,7 @@
 // One research cycle: decide if a proposal is due, research a candidate, check price + competition,
 // save it and email it for approval.
 import { LISTING_INTERVAL_DAYS, MIN_PROFIT_GBP, env } from "./config.mjs";
-import { getJSON, setJSON, listKeys, newId } from "./store.mjs";
+import { getJSON, setJSON, listKeys, getAll, newId } from "./store.mjs";
 import { research, costUSD } from "./research.mjs";
 import { ebayCompetition, ebayMatch } from "./competitors.mjs";
 import { SUPPLIERS, quote, feeRate, fixedFee } from "./catalog.mjs";
@@ -19,10 +19,9 @@ const okUrl = (u) => /^https:\/\/[^\s]+$/i.test(String(u || ""));
 export async function proposalDue(now = Date.now()) {
   const meta = (await getJSON("meta/agent")) || {};
   if (meta.running && now - Date.parse(meta.running) < 30 * 60e3) return { due: false, reason: "a research run is already in progress" };
-  for (const k of await listKeys("proposal/")) {
+  for (const { k, v: p } of await getAll("proposal/")) {
     if (k.startsWith("proposal/TEST-")) continue;
-    const p = await getJSON(k);
-    if (p && OPEN.includes(p.status)) return { due: false, reason: `proposal "${p.title}" is waiting for you (${p.status.replace(/_/g, " ")})` };
+    if (OPEN.includes(p.status)) return { due: false, reason: `proposal "${p.title}" is waiting for you (${p.status.replace(/_/g, " ")})` };
   }
   const today = new Date(now).toISOString().slice(0, 10);
   if (meta.spend?.date === today && meta.spend.usd >= dailyBudget())
@@ -34,9 +33,8 @@ export async function proposalDue(now = Date.now()) {
 
 async function previousTitles() {
   const out = [];
-  for (const k of await listKeys("proposal/")) {
+  for (const { k, v: p } of await getAll("proposal/")) {
     if (k.startsWith("proposal/TEST-")) continue;
-    const p = await getJSON(k);
     if (p?.title) out.push(`${p.title} (${p.supplier?.name || "?"})`);
   }
   return out.slice(-40);
@@ -85,7 +83,7 @@ export async function evaluate(c) {
 /** Proposes the best queued product that still beats eBay today. Returns a result, or null if the queue is empty. */
 export async function proposeFromQueue(meta) {
   const items = [];
-  for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q?.status === "queued") items.push({ k, q }); }
+  for (const { k, v: q } of await getAll("queue/")) if (q.status === "queued") items.push({ k, q });
   if (!items.length) return null;
   const h = (q) => q.screened?.headroomPence ?? -1;  // products with no rivals found come after ones with proven headroom
   items.sort((a, b) => h(b.q) - h(a.q));
@@ -138,7 +136,7 @@ export async function notifyQueueEmpty(detail = "") {
   await setJSON("agent/settings", { ...settings, status: "awaiting_choice", askedAt: new Date().toISOString(),
     history: [...(settings.history || []), { at: new Date().toISOString(), note: "Asked: queue empty" }] });
   let counts = {};
-  for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q) counts[q.status] = (counts[q.status] || 0) + 1; }
+  for (const { v: q } of await getAll("queue/")) counts[q.status] = (counts[q.status] || 0) + 1;
   await sendEmail(queueEmptyEmail({ counts, detail }));
   await setJSON("meta/agent", { ...meta, running: null, queueEmptyNotifiedAt: new Date().toISOString() });
   return { sent: false, notified: true, reason };
