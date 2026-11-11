@@ -6,7 +6,7 @@ import { getJSON, setJSON, listKeys, update } from "./store.mjs";
 import { sell, ebayImage, ebayErrors } from "./ebayuser.mjs";
 import { ebayGet } from "../shop.mjs";
 import { SUPPLIERS } from "./catalog.mjs";
-import { esc } from "./email.mjs";
+import { buildDescription } from "./describe.mjs";
 
 const TREE = "3"; // eBay UK category tree
 
@@ -163,10 +163,15 @@ async function itemSpecifics(catId, catName, it, title, hint) {
 }
 
 function description(p, q) {
-  const s = SUPPLIERS[q.supplier];
-  const paras = String(q.description || p.title).split(/\n+|(?<=\.)\s{2,}/).map((x) => x.trim()).filter(Boolean).slice(0, 8);
-  return `<h2>${esc(p.listingTitle || p.title)}</h2>${paras.map((x) => "<p>" + esc(x) + "</p>").join("")}
-<ul><li>Brand new</li><li>Dispatched within ${s.dispatchDays} working day${s.dispatchDays > 1 ? "s" : ""} from our UK warehouse partner</li><li>Tracked UK delivery</li></ul>`;
+  return buildDescription({ title: String(p.listingTitle || p.title).slice(0, 80), q, supplier: SUPPLIERS[q.supplier] });
+}
+
+/** All supplier photos (max 12), copied into eBay's picture service; any that can't be copied keep the supplier link. */
+async function photos(q) {
+  const list = [...new Set([...(q.images || []), q.image].filter((x) => /^https:\/\//.test(x || "")))].slice(0, 12);
+  const out = [];
+  for (let i = 0; i < list.length; i += 4) out.push(...(await Promise.all(list.slice(i, i + 4).map(ebayImage))));
+  return out;
 }
 
 /** Lists one approved proposal. Returns { listingId, url }. Throws with .fix on problems you can solve. */
@@ -179,11 +184,13 @@ export async function listProposal(p) {
   const sku = ebaySku(q.supplier, q.sku);
   const [loc, pol, { cat, spec }] = await Promise.all([ensureLocation(q.supplier), policies(q.supplier), pickCategory(title, q, p.categoryHint)]);
   const qty = Math.max(1, Math.min(5, Math.floor((q.stock || 0) - 2)));
-  const pic = await ebayImage(q.image);
+  const pics = await photos(q);
+  const pic = { error: pics.every((x) => x.error) ? pics[0]?.error : null };
+  const desc = description(p, q);
   const item = (withWeight) => ({
     availability: { shipToLocationAvailability: { quantity: qty } },
     condition: "NEW",
-    product: { title, description: description(p, q).slice(0, 4000), aspects: spec.aspects, imageUrls: [pic.url] },
+    product: { title, description: desc.text.slice(0, 4000), aspects: spec.aspects, imageUrls: pics.map((x) => x.url) },
     ...(withWeight && q.weightKg > 0 ? { packageWeightAndSize: { weight: { value: Math.round(q.weightKg * 1000), unit: "GRAM" } } } : {}),
   });
   const put = (b) => sellR("PUT", "/sell/inventory/v1/inventory_item/" + encodeURIComponent(sku), b);
@@ -193,7 +200,7 @@ export async function listProposal(p) {
     pic.error ? "The supplier's photo link may not work for eBay. Press Try again later, or drop this product." : "This is usually temporary on eBay's side – press Try again in a few minutes.");
   const offer = {
     sku, marketplaceId: "EBAY_GB", format: "FIXED_PRICE", listingDuration: "GTC", availableQuantity: qty,
-    categoryId: cat.id, listingDescription: description(p, q).slice(0, 500000), merchantLocationKey: loc,
+    categoryId: cat.id, listingDescription: desc.html.slice(0, 500000), merchantLocationKey: loc,
     listingPolicies: pol, pricingSummary: { price: { value: (p.pricing.pricePence / 100).toFixed(2), currency: "GBP" } },
   };
   const findOffer = async () => {
@@ -216,7 +223,7 @@ export async function listProposal(p) {
   await setJSON("listing/" + listingId, { listingId, sku, offerId, supplier: q.supplier, supplierSku: q.sku, proposalId: p.id, queueKey: p.queueKey,
     pricePence: p.pricing.pricePence, quantity: qty, categoryId: cat.id, dropship: true, listedAt: new Date().toISOString() });
   await update(p.queueKey, { status: "listed", listingId }, "Listed on eBay");
-  return { listingId, url: "https://www.ebay.co.uk/itm/" + listingId, categoryName: cat.name, quantity: qty, sku };
+  return { listingId, url: "https://www.ebay.co.uk/itm/" + listingId, categoryName: cat.name, quantity: qty, sku, photos: pics.length };
 }
 
 /** Listing IDs created by the agent (used to keep dropship items off the website until website orders are automated). */

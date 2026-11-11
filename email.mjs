@@ -171,17 +171,19 @@ ${btn("Allow internet research", actionUrl("agent", "settings", "allow-research"
 
 /* ---------- 6. Listed / listing failed ---------- */
 export function listedEmail(p, r) {
-  const html = wrap("Listed on eBay: " + (p.listingTitle || p.title), `
+  const verb = p.revise ? "Updated on eBay" : "Listed on eBay";
+  const html = wrap(verb + ": " + (p.listingTitle || p.title), `
 <table style="border-collapse:collapse;font-size:14px">
 ${row("Listing", link("View on eBay (item " + r.listingId + ")", r.url))}
 ${row("Price", "<b>" + gbp(p.pricing.pricePence) + "</b> with free UK postage")}
 ${row("Profit per sale", gbp(p.pricing.profitPence))}
 ${row("Quantity listed", esc(r.quantity))}
 ${row("Category", esc(r.categoryName))}
+${r.photos ? row("Photos", esc(r.photos)) : ""}
 ${row("Your eBay SKU", esc(r.sku))}
 </table>
 <p style="font-size:13px;color:#625f58">When it sells, you'll get an order pack email to place the order with ${esc(p.supplier.name)} (Phase 5). Until then, check Seller Hub for orders.</p>`);
-  return { subject: "Listed on eBay: " + (p.listingTitle || p.title) + " – " + gbp(p.pricing.pricePence), html, text: "Listed: " + r.url };
+  return { subject: verb + ": " + (p.listingTitle || p.title) + " – " + gbp(p.pricing.pricePence), html, text: verb + ": " + r.url };
 }
 export function listFailedEmail(p, e) {
   const html = wrap("Couldn't list on eBay: " + (p.listingTitle || p.title), `

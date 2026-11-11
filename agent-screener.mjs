@@ -6,7 +6,8 @@ import { timingSafeEqual } from "node:crypto";
 import { env } from "../lib/agent/config.mjs";
 import { exclusion, quote, notes, queueKey, SUPPLIERS } from "../lib/agent/catalog.mjs";
 import { ebayMatch } from "../lib/agent/competitors.mjs";
-import { getJSON, setJSON, listKeys } from "../lib/agent/store.mjs";
+import { getJSON, setJSON, listKeys, update } from "../lib/agent/store.mjs";
+import { startListing } from "../lib/agent/trigger.mjs";
 
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
@@ -30,11 +31,36 @@ const clean = (it) => ({
   barcode: String(it.barcode || "").slice(0, 20),
   material: String(it.material || "").slice(0, 80),
   image: /^https:\/\//.test(it.image || "") ? String(it.image).slice(0, 500) : "",
-  description: String(it.description || "").slice(0, 1500),
+  images: (Array.isArray(it.images) ? it.images : []).filter((x) => /^https:\/\//.test(x || "")).map((x) => String(x).slice(0, 500)).slice(0, 12),
+  description: String(it.description || "").slice(0, 4000),
+  descriptionHtml: String(it.descriptionHtml || "").slice(0, 8000),
+  dimensions: String(it.dimensions || "").slice(0, 60),
 });
+const DETAIL_FIELDS = ["images", "image", "description", "descriptionHtml", "dimensions", "material"];
 
 async function op(body) {
-  const items = (body.items || []).slice(0, body.op === "check" ? 5 : body.op === "queue" ? 50 : 600).map(clean);
+  const items = (body.items || []).slice(0, body.op === "check" ? 5 : body.op === "queue" || body.op === "refresh" ? 50 : 600).map(clean);
+  if (body.op === "refresh") {
+    // Updates photos/description of products already in the queue; listed ones are re-sent to eBay.
+    let updated = 0; const relist = [];
+    for (const it of items) {
+      const k = queueKey(it); const cur = await getJSON(k);
+      if (!cur || cur.status === "removed") continue;
+      const patch = Object.fromEntries(DETAIL_FIELDS.filter((f) => it[f] && (Array.isArray(it[f]) ? it[f].length : true)).map((f) => [f, it[f]]));
+      await setJSON(k, { ...cur, ...patch, detailsUpdatedAt: new Date().toISOString() });
+      updated++;
+      if (cur.status === "listed") relist.push(k);
+    }
+    let resent = 0;
+    if (relist.length) {
+      for (const pk of await listKeys("proposal/")) {
+        const pr = await getJSON(pk);
+        if (pr && pr.status === "listed" && relist.includes(pr.queueKey)) { await update(pk, { status: "ready_to_list", revise: true }, "Photos/description refreshed – updating eBay listing"); resent++; }
+      }
+      if (resent) await startListing().catch(() => {});
+    }
+    return { updated, resent };
+  }
   if (body.op === "prepare") {
     return {
       results: items.map((it) => {
@@ -72,7 +98,7 @@ async function op(body) {
   }
   if (body.op === "queueList") {
     const list = [];
-    for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q) list.push({ key: k, name: q.name, supplier: q.supplier, status: q.status, headroomPence: q.screened?.headroomPence ?? null }); }
+    for (const k of await listKeys("queue/")) { const q = await getJSON(k); if (q) list.push({ key: k, sku: q.sku, name: q.name, supplier: q.supplier, status: q.status, headroomPence: q.screened?.headroomPence ?? null }); }
     return { list };
   }
   if (body.op === "queueRemove") {
@@ -117,7 +143,7 @@ td.n{text-align:right;white-space:nowrap}.ok{color:var(--ok);font-weight:700}.no
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}a{color:inherit}</style></head><body><div class="w">
 <h1>Product screener</h1><p class="m">Pick the supplier files (Something Different "DropshipStockFull.txt" and/or AW "shop_awd.csv"). Products are filtered for your rules, priced with VAT and delivery for £1.50 profit, then checked against live eBay UK prices. Nothing is listed until you approve it by email.</p>
 <div class="c"><label for="f">Supplier files</label><input id="f" type="file" multiple accept=".csv,.txt,.tsv">
-<div class="row" style="margin-top:12px"><button id="go">Run screener</button><span class="m" id="st"></span></div><div class="bar"><i id="pb"></i></div>
+<div class="row" style="margin-top:12px"><button id="go">Run screener</button><button class="s" id="rf">Update photos &amp; descriptions of queued/listed products</button><span class="m" id="st"></span></div><div class="bar"><i id="pb"></i></div>
 <p class="m" id="sum"></p></div>
 <div class="c" id="res" hidden><div class="row"><b id="rt"></b><label style="margin:0;font-weight:400"><input type="checkbox" id="onlyPass" checked> show passes only</label>
 <button class="s" id="top">Select top 20</button><button class="s" id="all">Select all passes</button><button class="s" id="none">Clear</button><button id="q">Add selected to listing queue</button><button class="s" id="dl">Download results (CSV)</button><span class="m">Queue: <b id="qn">__QUEUED__</b> products waiting</span></div>
@@ -144,16 +170,19 @@ function parse(text, d) {
   const h = rows.shift().map((s) => s.trim());
   return rows.filter((r) => r.length > 3).map((r) => Object.fromEntries(h.map((k, i) => [k, r[i] == null ? "" : r[i]])));
 }
+const imgs = (v) => String(v || "").split(/[,|\\s]+/).map((x) => x.trim()).filter((x) => /^https:\\/\\//.test(x)).slice(0, 12);
 function normalise(text) {
   const first = text.slice(0, text.indexOf("\\n"));
   const rows = parse(text.replace(/^\\uFEFF/, ""), first.includes("\\t") ? "\\t" : ",");
   if (!rows.length) return [];
   if ("Item No" in rows[0]) return rows.map((r) => ({ supplier: "sd", sku: r["Item No"], name: r["Item Name"], category: "", priceExVat: num(r["Price"]), rrp: num(r["RRP"]),
     weightKg: (num(r["Packed Weight"]) || num(r["Individual Weight"])) / 1000, stock: num(r["Stock Level"]), moq: num(r["Min Order Qty"]) || 1,
-    discontinued: String(r["Discontinued"]).trim().toLowerCase() === "true", barcode: r["Barcode"], material: r["Material"], image: (r["URL Links"] || "").trim().split(/[,|\\s]+/)[0], description: r["Online Description"] }));
+    discontinued: String(r["Discontinued"]).trim().toLowerCase() === "true", barcode: r["Barcode"], material: r["Material"], images: imgs(r["URL Links"]), image: imgs(r["URL Links"])[0] || "", description: r["Online Description"],
+    dimensions: [r["Height"], r["Width"], r["Depth"]].map(num).filter((x) => x > 0).length === 3 ? "H " + num(r["Height"]) + " x W " + num(r["Width"]) + " x D " + num(r["Depth"]) + " cm" : "" }));
   if ("Product code" in rows[0]) return rows.map((r) => ({ supplier: "aw", sku: r["Product code"], name: r["Unit Name"], category: (r["Department"] || "") + " > " + (r["Subdepartment"] || ""), department: r["Department"],
     priceExVat: num(r["Unit price"]), rrp: num(r["Unit RRP"]), weightKg: num(r["Package weight (shipping)"]), stock: num(r["Available Quantity"]), moq: num(r["Units per outer"]) || 1,
-    status: r["Status"], forSale: r["For sale"], stockFlag: r["Stock"], barcode: r["Barcode"], material: r["Materials/Ingredients"], image: (r["Images"] || "").trim().split(/[,|\\s]+/)[0], description: r["Webpage description (plain text)"] }));
+    status: r["Status"], forSale: r["For sale"], stockFlag: r["Stock"], barcode: r["Barcode"], material: r["Materials/Ingredients"], images: imgs(r["Images"]), image: imgs(r["Images"])[0] || "", description: r["Webpage description (plain text)"],
+    descriptionHtml: r["Webpage description (html)"], dimensions: (r["Unit dimensions"] || "").trim() }));
   throw new Error("Unrecognised file: expected Something Different (Item No…) or AW (Product code…) columns");
 }
 async function call(op, items, extra) {
@@ -208,6 +237,24 @@ $("q").onclick = async () => {
     const screened = Object.fromEntries(b.map((r) => [r.ref, r.raw]));
     const j = await call("queue", b.map((r) => r.it), { screened }); added += j.added; queued = j.queued; }
   $("qn").textContent = queued; $("st").textContent = added + " added to the listing queue (" + queued + " waiting). The agent proposes one every 3 days, best first."; $("q").disabled = false;
+};
+$("rf").onclick = async () => {
+  const files = [...$("f").files]; if (!files.length) { $("st").textContent = "Choose the supplier file(s) first."; return; }
+  $("rf").disabled = true;
+  try {
+    let items = [];
+    for (const f of files) { $("st").textContent = "Reading " + f.name + "…"; items = items.concat(normalise(await f.text())); }
+    const ql = (await call("queueList", [])).list.filter((x) => x.status !== "removed");
+    const want = new Set(ql.map((x) => x.supplier + ":" + String(x.sku).toUpperCase()));
+    const match = items.filter((it) => want.has(it.supplier + ":" + String(it.sku).toUpperCase()));
+    let updated = 0, resent = 0;
+    for (let i = 0; i < match.length; i += 50) {
+      $("st").textContent = "Updating photos & descriptions… " + Math.min(i + 50, match.length) + " / " + match.length;
+      const j = await call("refresh", match.slice(i, i + 50)); updated += j.updated; resent += j.resent;
+    }
+    $("st").textContent = "Updated " + updated + " queued products." + (resent ? " " + resent + " already on eBay are being updated – you'll get an email for each." : "");
+  } catch (e) { $("st").textContent = "Error: " + e.message; }
+  $("rf").disabled = false;
 };
 $("dl").onclick = () => {
   const h = ["Supplier","SKU","Product","Cost+delivery £","Your price £","Cheapest eBay £","Headroom £","Rivals","Pass","eBay search","Notes"];

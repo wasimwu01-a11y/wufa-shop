@@ -21,6 +21,7 @@ export async function runListing(max = 3) {
       const r = await listProposal(p);
       const saved = await update(k, { status: "listed", ebayListingId: r.listingId, ebayUrl: r.url }, "Listed on eBay " + r.listingId);
       await sendEmail(listedEmail(saved, r));
+      if (saved.revise) await update(k, { revise: false }, "Update sent to eBay");
       done.push({ id: p.id, listed: r.listingId });
     } catch (e) {
       if (e.code === "NOT_CONNECTED") { await update(k, { status: "ready_to_list" }, "Waiting: " + e.message); done.push({ id: p.id, waiting: e.message }); break; }
