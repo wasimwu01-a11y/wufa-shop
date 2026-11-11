@@ -6,12 +6,14 @@ import { getJSON, update } from "../lib/agent/store.mjs";
 import { sendEmail, registerEmail, priceCheckEmail, esc } from "../lib/agent/email.mjs";
 import { gbp, priceItem } from "../lib/agent/pricing.mjs";
 import { ebayCompetition } from "../lib/agent/competitors.mjs";
+import { startListing } from "../lib/agent/trigger.mjs";
 
 const ALLOWED = {
   proposal: {
     approve: ["awaiting_approval"],
     reject: ["awaiting_approval"],
-    drop: ["awaiting_registration", "price_failed"],
+    drop: ["awaiting_registration", "price_failed", "list_failed"],
+    "retry-list": ["list_failed"],
     registered: ["awaiting_registration"],
     "list-anyway": ["price_failed"],
   },
@@ -33,6 +35,7 @@ const LABEL = {
   approve: "Approve this product",
   reject: "Reject this product",
   drop: "Drop this product",
+  "retry-list": "Try listing on eBay again",
   registered: "Enter the real trade price",
   "list-anyway": "List anyway at the higher price",
   paid: "Confirm you've paid the supplier",
@@ -104,6 +107,11 @@ export default async (req) => {
         ? `<p class="m">Log in to the supplier and enter the real trade price you see for this item.</p>
            <label for="cost">Trade price per item, including VAT (£)</label><input id="cost" name="cost" required inputmode="decimal" pattern="\\d{1,4}(\\.\\d{1,2})?" placeholder="e.g. 6.49">
            <label for="delivery">Supplier's dropship delivery charge per order, including VAT (£)</label><input id="delivery" name="delivery" required inputmode="decimal" pattern="\\d{1,3}(\\.\\d{1,2})?" placeholder="0 if free">`
+        : t.k === "proposal" && (t.a === "approve" || t.a === "retry-list") && item.source === "catalog"
+        ? `<label for="lt">eBay listing title (max 80 characters – edit if you like)</label><input id="lt" name="listingTitle" maxlength="80" value="${esc(item.listingTitle || item.title)}">
+           <p class="m">Avoid health or healing claims and brand names you don't own.</p>
+           <label for="ch">eBay category – optional (a few words, e.g. "sarong" or "beach cover up")</label><input id="ch" name="categoryHint" maxlength="60" value="${esc(item.categoryHint || "")}">
+           <p class="m">Leave blank to let eBay choose from the title. Use it if eBay keeps picking the wrong category.</p>`
         : t.a === "cant-fulfil"
         ? `<label for="reason">Reason (optional)</label><input id="reason" name="reason" maxlength="200">`
         : "";
@@ -141,6 +149,10 @@ export default async (req) => {
       case "agent:stop-research":
         changes = { status: "research_off" }; note = "Internet research stopped";
         after = "Internet research is off. The agent will only propose products from your listing queue.";
+        break;
+      case "proposal:retry-list":
+        changes = { status: "ready_to_list" }; note = "Retry listing";
+        after = "Trying again – you'll get an email when it's listed (or if eBay still refuses).";
         break;
       case "proposal:reject":
       case "proposal:drop":
@@ -183,9 +195,20 @@ export default async (req) => {
         after = "The agent will cancel and refund the order and pause the listing.";
         break;
     }
+    if (t.k === "proposal" && form.get("listingTitle")) {
+      const lt = String(form.get("listingTitle")).replace(/\s+/g, " ").trim().slice(0, 80);
+      if (lt.length >= 10) changes = { ...changes, listingTitle: lt };
+    }
+    if (t.k === "proposal" && form.has("categoryHint")) {
+      changes = { ...changes, categoryHint: String(form.get("categoryHint")).replace(/\s+/g, " ").trim().slice(0, 60) };
+    }
     const saved = await update(t.k + "/" + t.id, changes, note);
     if (t.k === "proposal" && item.queueKey) await update(item.queueKey, { status: changes.status === "rejected" ? "rejected" : changes.status === "ready_to_list" ? "approved" : "proposed" }, note);
     await spendToken(t);
+    if (t.k === "proposal" && changes.status === "ready_to_list" && saved.source === "catalog") {
+      await startListing().catch((e) => console.error("couldn't start listing job", e));
+      if (/queued for listing/.test(after)) after = after.replace("It's queued for listing on eBay and your website.", "It's being listed on eBay now – you'll get an email with the link in a few minutes.");
+    }
     if (t.k === "proposal" && changes.status === "price_failed") {
       await sendEmail(priceCheckEmail(saved));
       await update(t.k + "/" + t.id, {}, "Price-check email sent");

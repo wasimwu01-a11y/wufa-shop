@@ -171,7 +171,18 @@ export async function listProducts() {
     const g = await getGroup(legacyOf(it.itemId)).catch(() => null);
     return (g && shapeGroup(g)) || shape(it);
   }));
-  return out.filter((p) => p && p.currency === "GBP" && p.pricePence > 0);
+  const hide = await hiddenListings();
+  return out.filter((p) => p && p.currency === "GBP" && p.pricePence > 0 && !hide.has(legacyOf(p.id)));
+}
+
+// Listings created by the dropship agent stay off the website until website orders for them are automated
+// (set AGENT_SITE_DROPSHIP=1 once Phase 3 is live).
+async function hiddenListings() {
+  if (env("AGENT_SITE_DROPSHIP") === "1") return new Set();
+  try {
+    const { listKeys } = await import("./agent/store.mjs");
+    return new Set((await listKeys("listing/")).map((k) => k.slice("listing/".length)));
+  } catch { return new Set(); }
 }
 
 // Fetches one listing live and checks it really is ours and still for sale.
@@ -190,6 +201,7 @@ export async function getProduct(itemId) {
   if (it.itemEndDate && Date.parse(it.itemEndDate) < Date.now())
     throw Object.assign(new Error("This listing has ended"), { code: 409 });
   if (it.price?.currency !== "GBP") throw Object.assign(new Error("Item not priced in GBP"), { code: 409 });
+  if ((await hiddenListings()).has(legacyOf(itemId))) throw Object.assign(new Error("This item is only available on eBay"), { code: 409 });
   const p = shape(it);
   if (isVariation(it)) {
     // Name the chosen option from eBay's own data (not from the browser).

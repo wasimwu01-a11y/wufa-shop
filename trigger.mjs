@@ -10,3 +10,10 @@ export async function startResearch(force = false) {
   // Netlify answers 202 straight away for background functions.
   return res.status;
 }
+
+export async function startListing() {
+  const res = await fetch(siteUrl() + "/.netlify/functions/agent-list-background", {
+    method: "POST", headers: { "x-agent-key": env("AGENT_SECRET"), "content-type": "application/json" }, body: "{}",
+  });
+  return res.status;
+}
