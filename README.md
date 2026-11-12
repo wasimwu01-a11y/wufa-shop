@@ -47,3 +47,9 @@ Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (d
 - Approving a queue proposal (title editable) lists it on eBay within minutes and emails the link. If eBay refuses, you get an email
   with the fix and a "Try again" button. Agent listings stay off the website until website orders for dropship items are automated
   (`AGENT_SITE_DROPSHIP=1`, Phase 3). Optional: `SD_POSTCODE`, `AW_POSTCODE` for the item location.
+
+## Demand rule
+- Before proposing, the agent estimates sales per month across similar new UK eBay listings (eBay's "sold" count ÷ months listed).
+- Your original AW / Something Different queue needs at least `DEMAND_MIN_PER_MONTH_EXISTING` (default 1) a month;
+  products from any other supplier need `DEMAND_MIN_PER_MONTH` (default 100). Products below the bar are marked `no_demand` and skipped.
+- The screener's "Check eBay demand" button shows the breakdown for the whole queue and saves the results.

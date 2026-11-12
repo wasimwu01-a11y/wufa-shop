@@ -3,7 +3,7 @@
 import { LISTING_INTERVAL_DAYS, MIN_PROFIT_GBP, env } from "./config.mjs";
 import { getJSON, setJSON, listKeys, getAll, newId } from "./store.mjs";
 import { research, costUSD } from "./research.mjs";
-import { ebayCompetition, ebayMatch } from "./competitors.mjs";
+import { ebayCompetition, ebayMatch, ebayDemand } from "./competitors.mjs";
 import { SUPPLIERS, quote, feeRate, fixedFee } from "./catalog.mjs";
 import { priceItem, gbp } from "./pricing.mjs";
 import { sendEmail, proposalEmail, queueEmptyEmail } from "./email.mjs";
@@ -81,6 +81,13 @@ export async function evaluate(c) {
 
 // ---------- Listing queue (products chosen in the screener) ----------
 /** Proposes the best queued product that still beats eBay today. Returns a result, or null if the queue is empty. */
+/** Minimum sales a month (across similar eBay UK listings) a product must show before it's proposed.
+ *  Your original AW / Something Different queue uses a low bar; products from any new supplier must show real volume. */
+export function demandBar(supplier) {
+  const legacy = env("DEMAND_LEGACY_SUPPLIERS", "aw,sd").split(",").map((x) => x.trim());
+  return legacy.includes(supplier) ? Number(env("DEMAND_MIN_PER_MONTH_EXISTING", "1")) : Number(env("DEMAND_MIN_PER_MONTH", "100"));
+}
+
 export async function proposeFromQueue(meta) {
   const items = [];
   for (const { k, v: q } of await getAll("queue/")) if (q.status === "queued") items.push({ k, q });
@@ -88,7 +95,15 @@ export async function proposeFromQueue(meta) {
   const h = (q) => q.screened?.headroomPence ?? -1;  // products with no rivals found come after ones with proven headroom
   items.sort((a, b) => h(b.q) - h(a.q));
   const tried = [];
-  for (const { k, q } of items.slice(0, 6)) {
+  // Products already measured below the bar are skipped without spending eBay look-ups.
+  const fresh = (q) => q.demand?.at && Date.now() - Date.parse(q.demand.at) < 14 * 864e5;
+  for (const { k, q } of items) if (fresh(q) && q.demand.perMonth < demandBar(q.supplier)) await setJSON(k, { ...q, status: "no_demand" });
+  const live = items.filter(({ q }) => !(fresh(q) && q.demand.perMonth < demandBar(q.supplier)));
+  for (const { k, q } of live.slice(0, 12)) {
+    let d = fresh(q) ? q.demand : await ebayDemand({ name: q.name, barcode: q.barcode });
+    if (!d.checked) return { sent: false, reason: "couldn't check eBay demand (" + (d.reason || "unknown") + ")" };
+    if (!fresh(q)) await setJSON(k, { ...q, demand: d });
+    if (d.perMonth < demandBar(q.supplier)) { await setJSON(k, { ...q, demand: d, status: "no_demand" }); tried.push(q.name + ": only ~" + d.perMonth + " sales a month on eBay (needs " + demandBar(q.supplier) + ")"); continue; }
     const m = await ebayMatch({ name: q.name, barcode: q.barcode });
     if (!m.checked) return { sent: false, reason: "couldn't re-check eBay prices (" + (m.reason || "unknown") + ")" };
     const pr = quote(q, m.cheapest);
@@ -106,7 +121,7 @@ export async function proposeFromQueue(meta) {
       feeEvidence: `eBay ${(feeRate() * 100).toFixed(1)}% + £${fixedFee().toFixed(2)} per order (screening assumption)`,
       pricing: pr, estimateCostPence: pr.costPence, competitionSource: "eBay API",
       competition: `${m.count} comparable new UK Buy It Now listings; cheapest ${m.cheapest != null ? gbp(Math.round(m.cheapest * 100)) : "none found"} incl. postage`,
-      demand: "Not measured automatically – check sold history with the Terapeak link before approving",
+      demand: `~${d.perMonth} sales a month across ${d.listings} similar UK listings (${d.sold} sold in total)` + (d.top?.[0] ? `; best seller ${d.top[0].sold} sold, ~${d.top[0].perMonth}/month` : "") + ` – your bar for this supplier is ${demandBar(q.supplier)}/month`,
       risks: (q.notes || []).join("; "), sources: [m.searchUrl, ...(m.top || []).map((t) => t.url)].filter(okUrl).slice(0, 5),
       run: null, history: [{ at: new Date().toISOString(), note: "Proposed from listing queue" }],
     };
@@ -117,7 +132,7 @@ export async function proposeFromQueue(meta) {
     return { sent: true, id: p.id, title: p.title, from: "queue" };
   }
   await setJSON("meta/agent", { ...meta, running: null, lastRun: { at: new Date().toISOString(), attempts: tried.map((t) => ({ title: t, ok: false, reasons: ["failed eBay re-check"] })) } });
-  return { sent: false, reason: "queued products no longer beat eBay prices (" + tried.length + " checked)" };
+  return { sent: false, reason: "no queued product passed the eBay price and demand checks (" + tried.length + " checked)" };
 }
 
 /** Internet (AI) research runs only if you allowed it by email, or AGENT_AI_RESEARCH=1 is set in Netlify. */
@@ -152,7 +167,7 @@ export async function runCycle({ force = false } = {}) {
   {
     const meta0 = (await getJSON("meta/agent")) || {};
     const fromQueue = await proposeFromQueue(meta0);
-    if (fromQueue?.sent || /couldn't re-check/.test(fromQueue?.reason || "")) return fromQueue;
+    if (fromQueue?.sent || /couldn't (re-)?check/.test(fromQueue?.reason || "")) return fromQueue;
     // Queue is empty (or nothing in it beats eBay any more).
     if (!(await researchAllowed())) return await notifyQueueEmpty(fromQueue?.reason);
     if (!env("ANTHROPIC_API_KEY")) return { sent: false, reason: "internet research is allowed but ANTHROPIC_API_KEY is not set" };

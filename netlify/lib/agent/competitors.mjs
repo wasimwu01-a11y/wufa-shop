@@ -115,6 +115,7 @@ export async function ebayDemand({ name, barcode, maxListings = 6, minOverlap = 
     return { title: r.body.title, sold, perMonth: Math.round((sold / months) * 10) / 10, listedMonths: Math.round(months * 10) / 10, url: r.body.itemWebUrl };
   }))).filter(Boolean);
   if (limited && !rows.length) return { checked: false, rateLimited: true, reason: "eBay daily limit reached" };
+  if (ids.length && !rows.length) return { checked: false, reason: "eBay didn't return listing details – try again later" };
   rows.sort((a, b) => b.perMonth - a.perMonth);
   return {
     checked: true, listings: rows.length, similarFound: cands.size,
