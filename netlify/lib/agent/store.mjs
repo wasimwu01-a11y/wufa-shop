@@ -3,15 +3,14 @@
 import { env } from "./config.mjs";
 
 const mem = new Map();
-let blobs = null;
+let getStoreFn = null;
 
+// A fresh store handle on every call: Netlify gives each request its own short-lived access token,
+// so a handle kept from an earlier request fails with "Token expired" once the function stays warm.
 async function store() {
   if (env("AGENT_STORE") === "memory") return null;
-  if (!blobs) {
-    const { getStore } = await import("@netlify/blobs");
-    blobs = getStore({ name: "wufa-agent", consistency: "strong" });
-  }
-  return blobs;
+  if (!getStoreFn) getStoreFn = (await import("@netlify/blobs")).getStore;
+  return getStoreFn({ name: "wufa-agent", consistency: "strong" });
 }
 
 export async function getJSON(key) {

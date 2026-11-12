@@ -146,7 +146,7 @@ export async function importFromCJ({ maxChecks = Number(env("CJ_MAX_CHECKS", "12
   const filter = [env("CJ_MIN_PRICE_USD", "8"), env("CJ_MAX_PRICE_USD", "40"), env("CJ_ORDER_BY", "1")].join("|");
   if (st.filter !== filter) { st.page = 1; st.idx = 0; st.filter = filter; }
   const seen = (await getJSON("cj/seen")) || {};
-  const run = { at: new Date().toISOString(), checked: 0, queued: [], skipped: {}, error: null };
+  const run = { at: new Date().toISOString(), checked: 0, queued: [], skipped: {}, examples: [], error: null };
   const skip = (pid, why) => { run.skipped[why] = (run.skipped[why] || 0) + 1; seen[pid] = { at: run.at, why }; };
   const fx = await usdToGbp();
   const bar = demandBar("cj");
@@ -172,11 +172,15 @@ export async function importFromCJ({ maxChecks = Number(env("CJ_MAX_CHECKS", "12
         const m = await ebayMatch({ name });
         if (!m.checked) { run.error = "eBay price check failed: " + (m.reason || ""); break outer; }
         const rough = quote({ supplier: "cj", costGBP: roughCost, deliveryGBP: 3.5 * vat(), weightKg: 0.5 }, m.cheapest);
-        if (!rough.ok) { skip(pid, "can't beat eBay price with £1.50 profit"); continue; }
+        if (!rough.ok) {
+          skip(pid, "can't beat eBay price with £1.50 profit");
+          if (run.examples.length < 12) run.examples.push({ name: name.slice(0, 90), cjGBP: gbp2(roughCost), neededGBP: rough.pricePence / 100, rivalGBP: m.cheapest, rivalTitle: m.top?.[0]?.title?.slice(0, 90) || "", rivalUrl: m.top?.[0]?.url || "", searchUrl: m.searchUrl });
+          continue;
+        }
         // 3. eBay demand
         const dm = await ebayDemand({ name });
         if (!dm.checked) { run.error = "eBay demand check: " + dm.reason; if (dm.rateLimited) break outer; continue; }
-        if (dm.perMonth < bar) { skip(pid, `under ${bar} sales a month on eBay`); continue; }
+        if (dm.perMonth < bar) { skip(pid, `under ${bar} sales a month on eBay`); if (run.examples.length < 12) run.examples.push({ name: name.slice(0, 90), demand: dm.perMonth, searchUrl: m.searchUrl }); continue; }
         // 4. Exact CJ price + UK delivery for the best UK-stocked variant
         const { row, error } = await cjRow(pid, fx);
         if (!row) { skip(pid, error); continue; }

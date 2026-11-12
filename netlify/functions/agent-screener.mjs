@@ -290,6 +290,10 @@ function cjShow(j) {
     lr.queued.forEach((q) => lines.push("  ✓ " + q.name + " – £" + (q.pricePence / 100).toFixed(2) + ", profit £" + (q.profitPence / 100).toFixed(2) + ", ~" + q.perMonth + " sales/month"));
     const sk = Object.entries(lr.skipped || {}).sort((a, b) => b[1] - a[1]);
     if (sk.length) lines.push("Skipped: " + sk.map(([k, v]) => v + " " + k).join(" · "));
+    if ((lr.examples || []).length) {
+      lines.push("", "Examples (CJ cost incl. delivery estimate → price needed for £1.50 profit vs cheapest eBay match):");
+      lr.examples.forEach((x) => lines.push(x.demand != null ? "  • " + x.name + " – only ~" + x.demand + " sales/month" : "  • " + x.name + " – CJ £" + x.cjGBP.toFixed(2) + " → needs £" + x.neededGBP.toFixed(2) + " vs eBay £" + (x.rivalGBP ?? 0).toFixed(2) + (x.rivalTitle ? '  [eBay: "' + x.rivalTitle + '"]' : "")));
+    }
   }
   if (st.totals) lines.push("All runs so far: " + (st.totals.queued || 0) + " queued");
   $("cjout").textContent = lines.join("\\n");
