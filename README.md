@@ -53,3 +53,10 @@ Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (d
 - Your original AW / Something Different queue needs at least `DEMAND_MIN_PER_MONTH_EXISTING` (default 1) a month;
   products from any other supplier need `DEMAND_MIN_PER_MONTH` (default 100). Products below the bar are marked `no_demand` and skipped.
 - The screener's "Check eBay demand" button shows the breakdown for the whole queue and saves the results.
+
+## CJ Dropshipping (UK warehouse)
+- Set `CJ_API_KEY` in Netlify. The screener page has "Find products from CJ"; it also runs daily when fewer than `CJ_QUEUE_TARGET` (10) CJ products wait.
+- Only variants with 5+ units in CJ's UK warehouse and a UK→UK delivery of 7 days or less are used.
+- Cost = CJ price + delivery (USD → GBP at the day's rate + `CJ_FX_BUFFER` 3% card fee) + 20% VAT (`CJ_ADD_VAT=0` to drop if CJ invoices without VAT).
+- Products must sell `DEMAND_MIN_PER_MONTH` (100) a month on eBay UK and beat the cheapest rival with £1.50 profit.
+- eBay postage policy for CJ listings: `EBAY_POSTAGE_POLICY_CJ` (default "Wufa DS 2 days"); item location `CJ_LOCATION_CITY` / `CJ_POSTCODE`.

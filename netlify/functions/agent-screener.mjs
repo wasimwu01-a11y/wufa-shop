@@ -7,7 +7,8 @@ import { env } from "../lib/agent/config.mjs";
 import { exclusion, quote, notes, queueKey, SUPPLIERS } from "../lib/agent/catalog.mjs";
 import { ebayMatch, ebayDemand, demandBand } from "../lib/agent/competitors.mjs";
 import { getJSON, setJSON, listKeys, getAll, update } from "../lib/agent/store.mjs";
-import { startListing } from "../lib/agent/trigger.mjs";
+import { startListing, startCjImport } from "../lib/agent/trigger.mjs";
+import { cjStatus, cjProblem } from "../lib/agent/cj.mjs";
 
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
@@ -40,6 +41,11 @@ const DETAIL_FIELDS = ["images", "image", "description", "descriptionHtml", "dim
 
 async function op(body) {
   const items = (body.items || []).slice(0, body.op === "check" ? 5 : body.op === "queue" || body.op === "refresh" ? 50 : 600).map(clean);
+  if (body.op === "cjImport") {
+    if (cjProblem()) return { error: cjProblem() };
+    return { started: await startCjImport(), status: await cjStatus() };
+  }
+  if (body.op === "cjStatus") return { status: await cjStatus(), running: !!((await getJSON("cj/running"))?.at && Date.now() - Date.parse((await getJSON("cj/running")).at) < 16 * 60e3) };
   if (body.op === "demand") {
     // Checks how well similar eBay listings sell; saves the result on each queued product.
     const keys = (body.keys || []).filter((k) => String(k).startsWith("queue/")).slice(0, 3);
@@ -158,6 +164,8 @@ td.n{text-align:right;white-space:nowrap}.ok{color:var(--ok);font-weight:700}.no
 <div class="c"><label for="f">Supplier files</label><input id="f" type="file" multiple accept=".csv,.txt,.tsv">
 <div class="row" style="margin-top:12px"><button id="go">Run screener</button><button class="s" id="rf">Update photos &amp; descriptions of queued/listed products</button><span class="m" id="st"></span></div><div class="bar"><i id="pb"></i></div>
 <p class="m" id="sum"></p></div>
+<div class="c"><b>Find products from CJ Dropshipping (UK warehouse)</b><p class="m">Searches CJ's UK-stocked catalogue, most popular first, and adds products to your listing queue only if similar eBay UK listings sell 100+ a month and the price beats eBay's cheapest with £1.50 profit after CJ's price, UK delivery, VAT, card fee and eBay fees. Runs in the background (up to ~13 minutes, about 120 products per run) and carries on where it stopped; it also runs daily when fewer than 10 CJ products are waiting.</p>
+<div class="row"><button id="cjgo">Find products from CJ</button><button class="s" id="cjst">Refresh progress</button></div><pre class="m" id="cjout" style="white-space:pre-wrap;margin-top:8px"></pre></div>
 <div class="c"><b>eBay demand for your listing queue</b><p class="m">Checks how many similar new UK listings have sold and estimates sales per month for every queued product (no files needed). Results are saved, so running it again only checks what's missing. Uses about 8 eBay look-ups per product.</p>
 <div class="row"><button id="dm">Check eBay demand</button><button class="s" id="dmdl" hidden>Download demand (CSV)</button><span class="m" id="dst"></span></div><div class="bar"><i id="dpb"></i></div>
 <div id="dsum" class="row" style="margin-top:10px"></div>
@@ -273,6 +281,21 @@ $("rf").onclick = async () => {
   } catch (e) { $("st").textContent = "Error: " + e.message; }
   $("rf").disabled = false;
 };
+function cjShow(j) {
+  if (j.error) { $("cjout").textContent = "Error: " + j.error; return; }
+  const s = j.status || {}, st = s.state || {}, lr = st.lastRun;
+  const lines = [(j.running ? "Running now… (refresh in a few minutes)" : "Not running.") + "  CJ products in your queue: " + (s.inQueue || 0)];
+  if (lr) {
+    lines.push("Last run " + lr.at.slice(0, 16).replace("T", " ") + " (" + lr.seconds + "s): checked " + lr.checked + " products, queued " + lr.queued.length + (lr.error ? "  –  stopped: " + lr.error : ""));
+    lr.queued.forEach((q) => lines.push("  ✓ " + q.name + " – £" + (q.pricePence / 100).toFixed(2) + ", profit £" + (q.profitPence / 100).toFixed(2) + ", ~" + q.perMonth + " sales/month"));
+    const sk = Object.entries(lr.skipped || {}).sort((a, b) => b[1] - a[1]);
+    if (sk.length) lines.push("Skipped: " + sk.map(([k, v]) => v + " " + k).join(" · "));
+  }
+  if (st.totals) lines.push("All runs so far: " + (st.totals.queued || 0) + " queued");
+  $("cjout").textContent = lines.join("\\n");
+}
+$("cjgo").onclick = async () => { $("cjgo").disabled = true; try { cjShow(await call("cjImport", [])); $("cjout").textContent = "Started – this runs in the background for up to ~13 minutes. Press Refresh progress later.\\n\\n" + $("cjout").textContent; } catch (e) { $("cjout").textContent = "Error: " + e.message; } $("cjgo").disabled = false; };
+$("cjst").onclick = async () => { try { cjShow(await call("cjStatus", [])); } catch (e) { $("cjout").textContent = "Error: " + e.message; } };
 const BANDS = ["1000+ a month", "100–999 a month", "10–99 a month", "1–9 a month", "no sales", "check failed"];
 const band = (d) => !d || d.perMonth == null ? "check failed" : d.perMonth >= 1000 ? BANDS[0] : d.perMonth >= 100 ? BANDS[1] : d.perMonth >= 10 ? BANDS[2] : d.perMonth >= 1 ? BANDS[3] : BANDS[4];
 let dRows = [], dFilter = null;
