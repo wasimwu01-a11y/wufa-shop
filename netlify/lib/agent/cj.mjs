@@ -81,7 +81,8 @@ const gbp2 = (x) => Math.round(x * 100) / 100;
 // ---------- Catalogue ----------
 export async function ukProducts(page = 1) {
   const q = new URLSearchParams({ page: String(page), size: "100", countryCode: "GB", orderBy: env("CJ_ORDER_BY", "1"), sort: "desc",
-    startWarehouseInventory: "5", features: "enable_category" });
+    startWarehouseInventory: "5", features: "enable_category",
+    startSellPrice: env("CJ_MIN_PRICE_USD", "8"), endSellPrice: env("CJ_MAX_PRICE_USD", "40") });
   const r = await cj("GET", "/product/listV2?" + q);
   if (!r.ok) return { ok: false, error: r.body?.message || "HTTP " + r.status, quota: r.quota };
   const d = r.body.data || {};
@@ -141,6 +142,9 @@ export async function cjRow(pid, fx) {
 export async function importFromCJ({ maxChecks = Number(env("CJ_MAX_CHECKS", "120")), budgetMs = 12 * 60e3 } = {}) {
   const started = Date.now();
   const st = (await getJSON("cj/state")) || { page: 1, idx: 0, totals: {} };
+  // Start from page 1 again whenever the search settings change (e.g. a new price range).
+  const filter = [env("CJ_MIN_PRICE_USD", "8"), env("CJ_MAX_PRICE_USD", "40"), env("CJ_ORDER_BY", "1")].join("|");
+  if (st.filter !== filter) { st.page = 1; st.idx = 0; st.filter = filter; }
   const seen = (await getJSON("cj/seen")) || {};
   const run = { at: new Date().toISOString(), checked: 0, queued: [], skipped: {}, error: null };
   const skip = (pid, why) => { run.skipped[why] = (run.skipped[why] || 0) + 1; seen[pid] = { at: run.at, why }; };
