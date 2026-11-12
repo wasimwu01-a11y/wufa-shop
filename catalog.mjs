@@ -31,10 +31,21 @@ export const SUPPLIERS = {
     payment: "Card paid per order at checkout, no deposit required",
     policyEvidence: "Wholesale giftware importer with a dedicated dropship platform shipping direct to the buyer from its UK warehouse",
   },
+  cj: {
+    name: "CJ Dropshipping (UK warehouse)",
+    url: "https://cjdropshipping.com",
+    productUrl: (sku, it) => "https://cjdropshipping.com/product/-p-" + encodeURIComponent((it && it.pid) || sku) + ".html",
+    // CJ quotes UK→UK delivery per product (USD, converted with FX buffer and VAT when queued).
+    delivery: (kg, it) => (it && it.deliveryGBP > 0 ? it.deliveryGBP : 4.2),
+    dispatchDays: 2, deliveryDaysMax: 7,
+    dispatch: "CJ's UK warehouse; UK delivery service quoted per product (max 7 days)",
+    payment: "Card or PayPal per order at checkout on cjdropshipping.com (wallet optional, not used)",
+    policyEvidence: "Dropshipping wholesaler with UK warehouse stock, shipping direct to the buyer; only UK-stocked variants are used",
+  },
 };
 
 // Not allowed: regulated, age-restricted, children's, electrical, consumable or brand-risk goods.
-const BAN = /\b(toy|toys|squish\w*|kids?|child\w*|baby|babies|nursery|teddy|plush|slime|fidget|lip|balm|soap|bath|bombs?|lotion|cream|skin|cosmetic\w*|perfume|fragrance|oils?|wax|melts?|snap discs?|reed|diffusers?|essential|incense|cones?|sticks?|sage|smudge|resin|candles?|tealights?|lighter|matches|knife|knives|blade|athame|sword|dagger|batter(y|ies)|led|lamps?|light|lights|bulb|usb|plug|electric|mains|charger|speaker|bluetooth|adaptors?|remote control|plants?|seeds?|sweets?|chocolate|candy|tea|food|edible|treats?|drinks?|alcohol|gin|wine|vape|cbd|salt shot|cooking|harry potter|disney|marvel|pokemon|star wars|licensed|official|halloween|pumpkin|skeleton|ghost|massage|shampoo|deodorant|hair)\b|by amy brown|by anne stokes/i;
+const BAN = /\b(toy|toys|squish\w*|kids?|child\w*|baby|babies|nursery|teddy|plush|slime|fidget|lip|balm|soap|bath|bombs?|lotion|cream|skin|cosmetic\w*|perfume|fragrance|oils?|wax|melts?|snap discs?|reed|diffusers?|essential|incense|cones?|sticks?|sage|smudge|resin|candles?|tealights?|lighter|matches|knife|knives|blade|athame|sword|dagger|batter(y|ies)|led|lamps?|light|lights|bulb|usb|plug|electric|mains|charger|speaker|bluetooth|adaptors?|remote control|plants?|seeds?|sweets?|chocolate|candy|tea|food|edible|treats?|drinks?|alcohol|gin|wine|vape|cbd|salt shot|cooking|harry potter|disney|marvel|pokemon|star wars|licensed|official|halloween|pumpkin|skeleton|ghost|massage|shampoo|deodorant|hair ?(dye|oil|serum|spray|gel|care|straighteners?|curlers?|dryers?|clippers?|removal cream))\b|by amy brown|by anne stokes/i;
 const DISPLAY = /(\bset of \d{2,}|\bbox of \d{2,}|in (a )?display|on display|display (box|stand)|\b\d{2,} .*in a bag|wholesale|pack of \d{2,})/i;
 const AW_DEPTS = new Set(["Home & Garden", "Crystals & Esoterics", "Jewellery", "Bags & Accessories", "Clothing", "Musical Instruments", "Pet Accessories", "Incense and Burners", "Candles & Holders"]);
 const HEAL = /(crystal|chakra|healing|wellness|reiki|gemstone)/i;
@@ -44,7 +55,7 @@ const XMAS = /(christmas|advent|santa|gonk|reindeer|festive|xmas|snowflake|baubl
 export function exclusion(it) {
   if (!SUPPLIERS[it.supplier]) return "unknown supplier";
   if (it.discontinued) return "discontinued";
-  if (!(it.priceExVat > 0) || !(it.rrp > 0)) return "no price";
+  if (!(it.priceExVat > 0) || (it.supplier !== "cj" && !(it.rrp > 0))) return "no price";
   if ((it.moq || 1) !== 1) return "sold in multiples";
   if (!(it.stock >= 5)) return "low stock";
   if (!(it.weightKg > 0) || it.weightKg > 2) return "over 2 kg or no weight";
@@ -64,15 +75,16 @@ export function exclusion(it) {
 /** Price the product. `competitor` = cheapest comparable eBay total (GBP) or null. */
 export function quote(it, competitor = null) {
   const s = SUPPLIERS[it.supplier];
-  const delivery = s.delivery(it.weightKg);
+  const delivery = s.delivery(it.weightKg, it);
   const p = priceItem({
-    supplierCost: Math.round(it.priceExVat * 1.2 * 100) / 100,
+    supplierCost: it.costGBP > 0 ? it.costGBP : Math.round(it.priceExVat * 1.2 * 100) / 100,
     supplierDelivery: delivery,
     feeRate: feeRate(),
     fixedFee: fixedFee(),
     cheapestCompetitor: competitor,
   });
-  return { ...p, deliveryGBP: delivery, rrpPence: Math.round(it.rrp * 100), passesRrp: p.pricePence <= Math.round(it.rrp * 100) };
+  const rrpPence = Math.round((it.rrp || 0) * 100);
+  return { ...p, deliveryGBP: delivery, rrpPence, passesRrp: !rrpPence || p.pricePence <= rrpPence };
 }
 
 export function notes(it) {

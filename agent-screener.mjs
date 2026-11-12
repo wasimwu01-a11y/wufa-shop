@@ -5,9 +5,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { env } from "../lib/agent/config.mjs";
 import { exclusion, quote, notes, queueKey, SUPPLIERS } from "../lib/agent/catalog.mjs";
-import { ebayMatch } from "../lib/agent/competitors.mjs";
+import { ebayMatch, ebayDemand, demandBand } from "../lib/agent/competitors.mjs";
 import { getJSON, setJSON, listKeys, getAll, update } from "../lib/agent/store.mjs";
-import { startListing } from "../lib/agent/trigger.mjs";
+import { startListing, startCjImport } from "../lib/agent/trigger.mjs";
+import { cjStatus, cjProblem } from "../lib/agent/cj.mjs";
 
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
@@ -40,6 +41,25 @@ const DETAIL_FIELDS = ["images", "image", "description", "descriptionHtml", "dim
 
 async function op(body) {
   const items = (body.items || []).slice(0, body.op === "check" ? 5 : body.op === "queue" || body.op === "refresh" ? 50 : 600).map(clean);
+  if (body.op === "cjImport") {
+    if (cjProblem()) return { error: cjProblem() };
+    return { started: await startCjImport(), status: await cjStatus() };
+  }
+  if (body.op === "cjStatus") return { status: await cjStatus(), running: !!((await getJSON("cj/running"))?.at && Date.now() - Date.parse((await getJSON("cj/running")).at) < 16 * 60e3) };
+  if (body.op === "demand") {
+    // Checks how well similar eBay listings sell; saves the result on each queued product.
+    const keys = (body.keys || []).filter((k) => String(k).startsWith("queue/")).slice(0, 3);
+    const results = [];
+    for (const k of keys) {
+      const q = await getJSON(k); if (!q) continue;
+      if (!body.force && q.demand?.at && Date.now() - Date.parse(q.demand.at) < 7 * 864e5) { results.push({ key: k, ...q.demand, cached: true }); continue; }
+      const d = await ebayDemand({ name: q.name, barcode: q.barcode });
+      if (d.rateLimited) return { results, rateLimited: true };
+      if (d.checked) await setJSON(k, { ...(await getJSON(k)), demand: d });
+      results.push({ key: k, ...d });
+    }
+    return { results: results.map((r) => ({ ...r, band: r.checked ? demandBand(r.perMonth) : "check failed" })) };
+  }
   if (body.op === "refresh") {
     // Updates photos/description of products already in the queue; listed ones are re-sent to eBay.
     let updated = 0; const relist = [];
@@ -97,7 +117,7 @@ async function op(body) {
   }
   if (body.op === "queueList") {
     const list = [];
-    for (const { k, v: q } of await getAll("queue/")) { list.push({ key: k, sku: q.sku, name: q.name, supplier: q.supplier, status: q.status, headroomPence: q.screened?.headroomPence ?? null }); }
+    for (const { k, v: q } of await getAll("queue/")) { list.push({ key: k, sku: q.sku, name: q.name, supplier: q.supplier, status: q.status, image: q.image || "", demand: q.demand ? { perMonth: q.demand.perMonth, sold: q.demand.sold, listings: q.demand.listings, at: q.demand.at, top: q.demand.top, searchUrl: q.demand.searchUrl } : null, headroomPence: q.screened?.headroomPence ?? null }); }
     return { list };
   }
   if (body.op === "queueRemove") {
@@ -144,6 +164,12 @@ td.n{text-align:right;white-space:nowrap}.ok{color:var(--ok);font-weight:700}.no
 <div class="c"><label for="f">Supplier files</label><input id="f" type="file" multiple accept=".csv,.txt,.tsv">
 <div class="row" style="margin-top:12px"><button id="go">Run screener</button><button class="s" id="rf">Update photos &amp; descriptions of queued/listed products</button><span class="m" id="st"></span></div><div class="bar"><i id="pb"></i></div>
 <p class="m" id="sum"></p></div>
+<div class="c"><b>Find products from CJ Dropshipping (UK warehouse)</b><p class="m">Searches CJ's UK-stocked catalogue, most popular first, and adds products to your listing queue only if similar eBay UK listings sell 100+ a month and the price beats eBay's cheapest with £1.50 profit after CJ's price, UK delivery, VAT, card fee and eBay fees. Runs in the background (up to ~13 minutes, about 120 products per run) and carries on where it stopped; it also runs daily when fewer than 10 CJ products are waiting.</p>
+<div class="row"><button id="cjgo">Find products from CJ</button><button class="s" id="cjst">Refresh progress</button></div><pre class="m" id="cjout" style="white-space:pre-wrap;margin-top:8px"></pre></div>
+<div class="c"><b>eBay demand for your listing queue</b><p class="m">Checks how many similar new UK listings have sold and estimates sales per month for every queued product (no files needed). Results are saved, so running it again only checks what's missing. Uses about 8 eBay look-ups per product.</p>
+<div class="row"><button id="dm">Check eBay demand</button><button class="s" id="dmdl" hidden>Download demand (CSV)</button><span class="m" id="dst"></span></div><div class="bar"><i id="dpb"></i></div>
+<div id="dsum" class="row" style="margin-top:10px"></div>
+<div class="tw" id="dtw" hidden style="max-height:60vh;margin-top:10px"><table><thead><tr><th></th><th>Product</th><th class="n">Sales / month</th><th class="n">Sold (total)</th><th class="n">Listings</th><th>Best seller</th><th>Status</th></tr></thead><tbody id="dtb"></tbody></table></div></div>
 <div class="c" id="res" hidden><div class="row"><b id="rt"></b><label style="margin:0;font-weight:400"><input type="checkbox" id="onlyPass" checked> show passes only</label>
 <button class="s" id="top">Select top 20</button><button class="s" id="all">Select all passes</button><button class="s" id="none">Clear</button><button id="q">Add selected to listing queue</button><button class="s" id="dl">Download results (CSV)</button><span class="m">Queue: <b id="qn">__QUEUED__</b> products waiting</span></div>
 <div class="tw" style="max-height:70vh;margin-top:10px"><table><thead><tr><th></th><th></th><th data-k="name">Product</th><th data-k="supplier">Supplier</th><th data-k="cost" class="n">Cost+del.</th><th data-k="price" class="n">Your price</th><th data-k="cheapest" class="n">Cheapest eBay</th><th data-k="headroom" class="n">Headroom</th><th data-k="count" class="n">Rivals</th><th>Notes</th></tr></thead><tbody id="tb"></tbody></table></div></div>
@@ -254,6 +280,61 @@ $("rf").onclick = async () => {
     $("st").textContent = "Updated " + updated + " queued products." + (resent ? " " + resent + " already on eBay are being updated – you'll get an email for each." : "");
   } catch (e) { $("st").textContent = "Error: " + e.message; }
   $("rf").disabled = false;
+};
+function cjShow(j) {
+  if (j.error) { $("cjout").textContent = "Error: " + j.error; return; }
+  const s = j.status || {}, st = s.state || {}, lr = st.lastRun;
+  const lines = [(j.running ? "Running now… (refresh in a few minutes)" : "Not running.") + "  CJ products in your queue: " + (s.inQueue || 0)];
+  if (lr) {
+    lines.push("Last run " + lr.at.slice(0, 16).replace("T", " ") + " (" + lr.seconds + "s): checked " + lr.checked + " products, queued " + lr.queued.length + (lr.error ? "  –  stopped: " + lr.error : ""));
+    lr.queued.forEach((q) => lines.push("  ✓ " + q.name + " – £" + (q.pricePence / 100).toFixed(2) + ", profit £" + (q.profitPence / 100).toFixed(2) + ", ~" + q.perMonth + " sales/month"));
+    const sk = Object.entries(lr.skipped || {}).sort((a, b) => b[1] - a[1]);
+    if (sk.length) lines.push("Skipped: " + sk.map(([k, v]) => v + " " + k).join(" · "));
+    if ((lr.examples || []).length) {
+      lines.push("", "Examples (CJ cost incl. delivery estimate → price needed for £1.50 profit vs cheapest eBay match):");
+      lr.examples.forEach((x) => lines.push(x.demand != null ? "  • " + x.name + " – only ~" + x.demand + " sales/month" : "  • " + x.name + " – CJ £" + x.cjGBP.toFixed(2) + " → needs £" + x.neededGBP.toFixed(2) + " vs eBay £" + (x.rivalGBP ?? 0).toFixed(2) + (x.rivalTitle ? '  [eBay: "' + x.rivalTitle + '"]' : "")));
+    }
+  }
+  if (st.totals) lines.push("All runs so far: " + (st.totals.queued || 0) + " queued");
+  $("cjout").textContent = lines.join("\\n");
+}
+$("cjgo").onclick = async () => { $("cjgo").disabled = true; try { cjShow(await call("cjImport", [])); $("cjout").textContent = "Started – this runs in the background for up to ~13 minutes. Press Refresh progress later.\\n\\n" + $("cjout").textContent; } catch (e) { $("cjout").textContent = "Error: " + e.message; } $("cjgo").disabled = false; };
+$("cjst").onclick = async () => { try { cjShow(await call("cjStatus", [])); } catch (e) { $("cjout").textContent = "Error: " + e.message; } };
+const BANDS = ["1000+ a month", "100–999 a month", "10–99 a month", "1–9 a month", "no sales", "check failed"];
+const band = (d) => !d || d.perMonth == null ? "check failed" : d.perMonth >= 1000 ? BANDS[0] : d.perMonth >= 100 ? BANDS[1] : d.perMonth >= 10 ? BANDS[2] : d.perMonth >= 1 ? BANDS[3] : BANDS[4];
+let dRows = [], dFilter = null;
+function dRender() {
+  const counts = Object.fromEntries(BANDS.map((b) => [b, 0])); dRows.forEach((r) => counts[r.band]++);
+  $("dsum").innerHTML = BANDS.filter((b) => counts[b] || b !== "check failed").map((b) => '<button class="s" data-b="' + b + '"' + (dFilter === b ? ' style="outline:2px solid var(--accent)"' : "") + '>' + b + ': <b>' + counts[b] + '</b></button>').join("") + (dFilter ? '<button class="s" data-b="">show all</button>' : "");
+  const list = dRows.filter((r) => !dFilter || r.band === dFilter).sort((a, b) => (b.perMonth ?? -1) - (a.perMonth ?? -1));
+  $("dtb").innerHTML = list.slice(0, 1000).map((r) => '<tr><td>' + (r.image ? '<img class="t" loading="lazy" src="' + esc(r.image) + '" alt="">' : "") + '</td><td>' + esc(r.name) + '<div class="m">' + esc(r.band) + (r.searchUrl ? ' · <a target="_blank" rel="noopener" href="' + esc(r.searchUrl) + '">eBay search</a>' : "") + '</div></td><td class="n">' + (r.perMonth ?? "–") + '</td><td class="n">' + (r.sold ?? "–") + '</td><td class="n">' + (r.listings ?? "–") + '</td><td class="m">' + (r.top && r.top[0] ? '<a target="_blank" rel="noopener" href="' + esc(r.top[0].url) + '">' + esc(r.top[0].sold + " sold, ~" + r.top[0].perMonth + "/month") + '</a>' : "") + '</td><td class="m">' + esc(r.status) + '</td></tr>').join("");
+  $("dtw").hidden = !dRows.length; $("dmdl").hidden = !dRows.length;
+}
+$("dsum").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; dFilter = b.dataset.b || null; dRender(); };
+$("dm").onclick = async () => {
+  $("dm").disabled = true;
+  try {
+    const ql = (await call("queueList", [])).list.filter((x) => x.status !== "removed");
+    dRows = ql.map((x) => ({ key: x.key, name: x.name, image: x.image, status: x.status.replace(/_/g, " "), ...(x.demand || {}), band: x.demand ? band(x.demand) : "check failed" }));
+    const todo = ql.filter((x) => !x.demand || Date.now() - Date.parse(x.demand.at) > 7 * 864e5).map((x) => x.key);
+    dRender();
+    let done = 0, stop = false; const batches = []; for (let i = 0; i < todo.length; i += 3) batches.push(todo.slice(i, i + 3));
+    async function worker() { while (batches.length && !stop) { const b = batches.shift();
+      const j = await call("demand", [], { keys: b }).catch((e) => ({ results: [], error: String(e.message || e) }));
+      for (const r of j.results || []) { const row = dRows.find((x) => x.key === r.key); if (row && r.checked) Object.assign(row, { perMonth: r.perMonth, sold: r.sold, listings: r.listings, top: r.top, searchUrl: r.searchUrl, band: r.band }); }
+      if (j.rateLimited) { stop = true; $("dst").textContent = "eBay's daily look-up limit reached – " + dRows.filter((x) => x.band !== "check failed").length + " of " + dRows.length + " products have results. Press the button again tomorrow to finish (saved results are kept)."; }
+      done += b.length; if (!stop) $("dst").textContent = "Checking eBay demand… " + Math.min(done, todo.length) + " / " + todo.length; $("dpb").style.width = (done / Math.max(1, todo.length) * 100) + "%"; dRender(); } }
+    await Promise.all([worker(), worker()]);
+    if (!stop) $("dst").textContent = "Done – " + dRows.length + " queued products." + (todo.length < dRows.length ? " (" + (dRows.length - todo.length) + " used results saved in the last 7 days.)" : "");
+    dRender();
+  } catch (e) { $("dst").textContent = "Error: " + e.message; }
+  $("dm").disabled = false;
+};
+$("dmdl").onclick = () => {
+  const L = [["Product", "Status", "Demand band", "Sales per month (similar listings)", "Sold total", "Listings checked", "Best seller sold", "Best seller per month", "Best seller link", "eBay search"]].concat(
+    dRows.map((r) => [r.name, r.status, r.band, r.perMonth ?? "", r.sold ?? "", r.listings ?? "", r.top?.[0]?.sold ?? "", r.top?.[0]?.perMonth ?? "", r.top?.[0]?.url || "", r.searchUrl || ""]));
+  const csv = L.map((r) => r.map((v) => '"' + String(v).replace(/"/g, '""') + '"').join(",")).join("\\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "ebay-demand.csv"; a.click();
 };
 $("dl").onclick = () => {
   const h = ["Supplier","SKU","Product","Cost+delivery £","Your price £","Cheapest eBay £","Headroom £","Rivals","Pass","eBay search","Notes"];

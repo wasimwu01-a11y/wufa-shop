@@ -17,3 +17,10 @@ export async function startListing() {
   });
   return res.status;
 }
+
+export async function startCjImport() {
+  const res = await fetch(siteUrl() + "/.netlify/functions/agent-cj-import-background", {
+    method: "POST", headers: { "x-agent-key": env("AGENT_SECRET"), "content-type": "application/json" }, body: "{}",
+  });
+  return res.status;
+}

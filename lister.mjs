@@ -13,9 +13,10 @@ const TREE = "3"; // eBay UK category tree
 export const LOCATIONS = {
   sd: { key: "wufa-sd-swansea", name: "Something Different warehouse", city: "Swansea", stateOrProvince: "Swansea", postalCode: env("SD_POSTCODE") },
   aw: { key: "wufa-aw-sheffield", name: "AW warehouse", city: "Sheffield", stateOrProvince: "South Yorkshire", postalCode: env("AW_POSTCODE") },
+  cj: { key: "wufa-cj-uk", name: "CJ UK warehouse", city: env("CJ_LOCATION_CITY", "UK warehouse"), stateOrProvince: env("CJ_LOCATION_REGION", "England"), postalCode: env("CJ_POSTCODE") },
 };
 // Postage policies you create once in Seller Hub (free UK postage, the right handling time). Names can be changed in Netlify.
-const POSTAGE = { sd: () => env("EBAY_POSTAGE_POLICY_SD", "Wufa DS 1 day"), aw: () => env("EBAY_POSTAGE_POLICY_AW", "Wufa DS 2 days") };
+const POSTAGE = { sd: () => env("EBAY_POSTAGE_POLICY_SD", "Wufa DS 1 day"), aw: () => env("EBAY_POSTAGE_POLICY_AW", "Wufa DS 2 days"), cj: () => env("EBAY_POSTAGE_POLICY_CJ", "Wufa DS 2 days") };
 
 export const ebaySku = (supplier, sku) => ("DS-" + supplier.toUpperCase() + "-" + sku).replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 50);
 const fail = (msg, fix) => Object.assign(new Error(msg), { fix });

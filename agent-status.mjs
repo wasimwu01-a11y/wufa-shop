@@ -4,6 +4,7 @@ import { env } from "../lib/agent/config.mjs";
 import { getJSON, listKeys, getAll } from "../lib/agent/store.mjs";
 import { proposalDue, dailyBudget } from "../lib/agent/pipeline.mjs";
 import { sellerStatus } from "../lib/agent/ebayuser.mjs";
+import { cjStatus } from "../lib/agent/cj.mjs";
 
 const same = (a, b) => {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
@@ -37,6 +38,8 @@ export default async (req) => {
   const ss = await sellerStatus().catch(() => ({ connected: false }));
   lines.push("eBay selling access: " + (ss.connected ? "connected (valid until " + ss.refreshExpires.slice(0, 10) + ")" : "NOT connected – open /agent/ebay-connect"));
   lines.push("Agent listings on eBay: " + (await listKeys("listing/")).length);
+  const cs = await cjStatus().catch(() => null);
+  if (cs) lines.push("CJ Dropshipping: " + (cs.connected ? "API key set" : "NOT set (CJ_API_KEY)") + "; " + cs.inQueue + " CJ products in queue" + (cs.state?.lastRun ? "; last import " + cs.state.lastRun.at.slice(0, 16) + " – checked " + cs.state.lastRun.checked + ", queued " + cs.state.lastRun.queued.length + (cs.state.lastRun.error ? " (stopped: " + cs.state.lastRun.error + ")" : "") : ""));
   lines.push("", "Proposals:");
   for (const { k, v: p } of await getAll("proposal/")) {
     if (k.startsWith("proposal/TEST-")) continue;

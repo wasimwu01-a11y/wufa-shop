@@ -73,3 +73,57 @@ export async function ebayMatch({ name, barcode, minOverlap = 0.6 }) {
   const list = [...seen.values()].sort((a, b) => a.total - b.total);
   return { checked: true, count: list.length, cheapest: list[0]?.total ?? null, top: list.slice(0, 3), searchUrl: ebaySearchUrl(name) };
 }
+
+// ---------- Demand: how much similar listings actually sell ----------
+/**
+ * Finds similar new UK Buy It Now listings and reads eBay's "sold" count on each (Browse getItem →
+ * estimatedSoldQuantity) plus when it was listed, to estimate sales per month across those listings.
+ * Returns { checked, listings, sold, perMonth, top:[{title,sold,perMonth,url}], searchUrl } or { checked:false, reason, rateLimited }.
+ */
+export async function ebayDemand({ name, barcode, maxListings = 6, minOverlap = 0.6 }) {
+  if (configProblem()) return { checked: false, reason: "eBay keys not connected" };
+  const filter = encodeURIComponent("buyingOptions:{FIXED_PRICE},itemLocationCountry:GB,conditions:{NEW}");
+  const own = (env("EBAY_SELLER", "nuvr_61") || "").toLowerCase();
+  const want = tokens(name), key = want.slice(0, 8);
+  const cands = new Map(); // legacy listing id -> item id
+  const legacy = (id) => String(id).split("|")[1] || id;
+  const take = (it) => { if (it && (it.seller?.username || "").toLowerCase() !== own && !cands.has(legacy(it.itemId))) cands.set(legacy(it.itemId), it.itemId); };
+  const gtin = String(barcode || "").replace(/\D/g, "");
+  const searches = [];
+  if (gtin.length >= 8 && gtin.length <= 14) searches.push(ebayGet(`/buy/browse/v1/item_summary/search?gtin=${gtin}&filter=${filter}&limit=20`).then((r) => ({ r, gtin: true })));
+  if (want.length) searches.push(ebayGet(`/buy/browse/v1/item_summary/search?q=${encodeURIComponent(want.slice(0, 5).join(" "))}&filter=${filter}&limit=50`).then((r) => ({ r })));
+  const res = await Promise.all(searches);
+  if (res.some((x) => x.r.status === 429)) return { checked: false, rateLimited: true, reason: "eBay daily limit reached" };
+  if (!res.length || res.every((x) => !x.r.ok)) return { checked: false, reason: "eBay search failed (" + (res[0]?.r.status ?? "no search terms") + ")" };
+  for (const { r, gtin: g } of res) {
+    if (!r.ok) continue;
+    for (const it of r.body.itemSummaries || []) {
+      if (g) { take(it); continue; }
+      const t = new Set(tokens(it.title));
+      if (key.length && key.filter((w) => t.has(w)).length / key.length >= minOverlap) take(it);
+    }
+  }
+  const ids = [...cands.values()].slice(0, maxListings);
+  const now = Date.now(); let limited = false;
+  const rows = (await Promise.all(ids.map(async (id) => {
+    const r = await ebayGet("/buy/browse/v1/item/" + encodeURIComponent(id));
+    if (r.status === 429) { limited = true; return null; }
+    if (!r.ok) return null;
+    const sold = Number(r.body.estimatedAvailabilities?.[0]?.estimatedSoldQuantity) || 0;
+    const created = Date.parse(r.body.itemCreationDate || "") || now - 30 * 864e5;
+    const months = Math.max(1, (now - created) / (30.44 * 864e5));
+    return { title: r.body.title, sold, perMonth: Math.round((sold / months) * 10) / 10, listedMonths: Math.round(months * 10) / 10, url: r.body.itemWebUrl };
+  }))).filter(Boolean);
+  if (limited && !rows.length) return { checked: false, rateLimited: true, reason: "eBay daily limit reached" };
+  if (ids.length && !rows.length) return { checked: false, reason: "eBay didn't return listing details – try again later" };
+  rows.sort((a, b) => b.perMonth - a.perMonth);
+  return {
+    checked: true, listings: rows.length, similarFound: cands.size,
+    sold: rows.reduce((s, x) => s + x.sold, 0),
+    perMonth: Math.round(rows.reduce((s, x) => s + x.perMonth, 0)),
+    top: rows.slice(0, 3), searchUrl: ebaySearchUrl(name), at: new Date().toISOString(),
+  };
+}
+
+/** Demand band used in reports. */
+export const demandBand = (perMonth) => perMonth == null ? "not checked" : perMonth >= 1000 ? "1000+ a month" : perMonth >= 100 ? "100–999 a month" : perMonth >= 10 ? "10–99 a month" : perMonth >= 1 ? "1–9 a month" : "no sales";
