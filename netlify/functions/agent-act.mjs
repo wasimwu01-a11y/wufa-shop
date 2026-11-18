@@ -7,6 +7,7 @@ import { sendEmail, registerEmail, priceCheckEmail, esc } from "../lib/agent/ema
 import { gbp, priceItem } from "../lib/agent/pricing.mjs";
 import { ebayCompetition } from "../lib/agent/competitors.mjs";
 import { startListing } from "../lib/agent/trigger.mjs";
+import { undoChange } from "../lib/agent/learn.mjs";
 
 const ALLOWED = {
   proposal: {
@@ -26,6 +27,7 @@ const ALLOWED = {
     paid: ["awaiting_payment"],
     "cant-fulfil": ["awaiting_payment"],
   },
+  change: { undo: ["applied"] },
 };
 
 const LABEL = {
@@ -40,6 +42,7 @@ const LABEL = {
   "list-anyway": "List anyway at the higher price",
   paid: "Confirm you've paid the supplier",
   "cant-fulfil": "Mark this order as can't fulfil",
+  undo: "Undo the agent's change",
 };
 
 const CARRIERS = ["Royal Mail", "Evri", "DPD", "DHL", "Parcelforce", "Yodel", "UPS", "Other"];
@@ -75,6 +78,12 @@ function summary(t, item) {
     return t.a === "allow-research"
       ? `<p>When the listing queue is empty, the agent will search the web for UK wholesale dropship suppliers and products that meet your rules, using your Anthropic credit (up to the daily research budget). Every product still comes to you for approval. You can stop it any time from a proposal email.</p>`
       : `<p>The agent will wait until you add products with the screener.</p>`;
+  if (t.k === "change")
+    return item.type === "end"
+      ? `<p>Put <b>${esc(item.title)}</b> back on eBay. The agent won't end it automatically again.</p>`
+      : item.type === "title"
+      ? `<dl><dt>Back to</dt><dd>${esc(item.before)}</dd><dt>Instead of</dt><dd>${esc(item.after)}</dd></dl><p class="m">The agent won't change this title again.</p>`
+      : `<p>Restore the previous description of <b>${esc(item.title)}</b>. The agent won't rewrite it again.</p>`;
   if (t.k === "proposal")
     return `<dl><dt>Product</dt><dd>${esc(item.title)}</dd><dt>Supplier</dt><dd>${esc(item.supplier?.name)}</dd><dt>Price</dt><dd>${gbp(item.pricing.pricePence)}</dd><dt>Profit</dt><dd>${gbp(item.pricing.profitPence)}</dd></dl>`;
   return `<dl><dt>Item</dt><dd>${esc(item.title)} × ${esc(item.quantity)}</dd><dt>Channel</dt><dd>${esc(item.channel)} order ${esc(item.channelOrderId)}</dd><dt>Customer</dt><dd>${esc(item.shipTo?.name)}, ${esc(item.shipTo?.postcode)}</dd></dl>`;
@@ -187,6 +196,12 @@ export default async (req) => {
         changes = { status: "paid_awaiting_sync", tracking, carrier };
         note = `Paid; ${carrier} ${tracking}`;
         after = `Tracking ${tracking} saved. It will be sent to ${item.channel === "eBay" ? "eBay" : "the customer"} automatically.`;
+        break;
+      }
+      case "change:undo": {
+        await undoChange(item);
+        changes = { status: "undone" }; note = "You undid this change";
+        after = item.type === "end" ? "It will be back on eBay within a few minutes." : "eBay will show the previous version within a few minutes.";
         break;
       }
       case "order:cant-fulfil":

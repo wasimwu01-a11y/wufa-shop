@@ -12,7 +12,12 @@ export const SCOPES = [
   "https://api.ebay.com/oauth/api_scope/sell.inventory",
   "https://api.ebay.com/oauth/api_scope/sell.account",
   "https://api.ebay.com/oauth/api_scope/sell.fulfillment",
+  "https://api.ebay.com/oauth/api_scope/sell.marketing",
+  "https://api.ebay.com/oauth/api_scope/sell.analytics.readonly",
 ];
+// Sign-ins made before Promoted Listings was added didn't include sell.marketing; refreshing with a scope
+// that wasn't granted fails, so each stored sign-in remembers its own scopes.
+const OLD_SCOPES = SCOPES.filter((s) => !s.endsWith("sell.marketing") && !s.endsWith("sell.analytics.readonly"));
 const KEY = "secret/ebay-seller";
 let cache = { token: null, exp: 0 };
 
@@ -43,14 +48,14 @@ export async function completeConnect(code, state) {
   if (!res.ok || !j.refresh_token) throw new Error("eBay didn't accept the sign-in (" + res.status + "): " + JSON.stringify(j).slice(0, 200));
   await spendToken(t);
   const exp = Date.now() + (Number(j.refresh_token_expires_in) || 47304000) * 1000;
-  await setJSON(KEY, { refreshToken: j.refresh_token, refreshExpires: new Date(exp).toISOString(), connectedAt: new Date().toISOString() });
+  await setJSON(KEY, { refreshToken: j.refresh_token, refreshExpires: new Date(exp).toISOString(), connectedAt: new Date().toISOString(), scopes: SCOPES });
   cache = { token: j.access_token, exp: Date.now() + (Number(j.expires_in || 7200) - 120) * 1000 };
   return { refreshExpires: new Date(exp).toISOString() };
 }
 
 export async function sellerStatus() {
   const s = await getJSON(KEY);
-  return s ? { connected: true, connectedAt: s.connectedAt, refreshExpires: s.refreshExpires } : { connected: false };
+  return s ? { connected: true, connectedAt: s.connectedAt, refreshExpires: s.refreshExpires, canPromote: (s.scopes || OLD_SCOPES).some((x) => x.endsWith("sell.marketing")), canAnalyse: (s.scopes || OLD_SCOPES).some((x) => x.endsWith("sell.analytics.readonly")) } : { connected: false };
 }
 
 async function userToken() {
@@ -60,7 +65,7 @@ async function userToken() {
   const res = await fetch(API() + "/identity/v1/oauth2/token", {
     method: "POST",
     headers: { Authorization: basic(), "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: s.refreshToken, scope: SCOPES.join(" ") }).toString(),
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: s.refreshToken, scope: (s.scopes || OLD_SCOPES).join(" ") }).toString(),
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error("eBay refused the stored sign-in (" + res.status + ") – reconnect at /agent/ebay-connect"), { code: "NOT_CONNECTED" });

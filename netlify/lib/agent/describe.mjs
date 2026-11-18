@@ -40,8 +40,8 @@ export function blocks(raw) {
 }
 
 /** Builds the eBay description. Returns { html, text }. */
-export function buildDescription({ title, q, supplier }) {
-  const b = blocks(q.descriptionHtml || q.description);
+export function buildDescription({ title, q, supplier, override }) {
+  const b = override?.length ? override : blocks(q.descriptionHtml || q.description);
   const facts = [
     q.material && ["Material", q.material],
     q.dimensions && ["Size", q.dimensions],

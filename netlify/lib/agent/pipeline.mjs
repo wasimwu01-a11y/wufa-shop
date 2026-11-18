@@ -4,6 +4,8 @@ import { LISTING_INTERVAL_DAYS, MIN_PROFIT_GBP, env } from "./config.mjs";
 import { getJSON, setJSON, listKeys, getAll, newId } from "./store.mjs";
 import { research, costUSD } from "./research.mjs";
 import { ebayCompetition, ebayMatch, ebayDemand } from "./competitors.mjs";
+import { learnedWeight, trendFactor } from "./learn.mjs";
+import { betterTitle, rivalTitles } from "./writer.mjs";
 import { SUPPLIERS, quote, feeRate, fixedFee } from "./catalog.mjs";
 import { priceItem, gbp } from "./pricing.mjs";
 import { sendEmail, proposalEmail, queueEmptyEmail } from "./email.mjs";
@@ -27,7 +29,7 @@ export async function proposalDue(now = Date.now()) {
   if (meta.spend?.date === today && meta.spend.usd >= dailyBudget())
     return { due: false, reason: `today's research budget ($${dailyBudget().toFixed(2)}) is used up; it carries on tomorrow` };
   if (meta.lastProposalAt && now - Date.parse(meta.lastProposalAt) < LISTING_INTERVAL_DAYS * 864e5 - 3600e3)
-    return { due: false, reason: `last proposal was ${new Date(meta.lastProposalAt).toUTCString()}; next one after ${LISTING_INTERVAL_DAYS} days` };
+    return { due: false, reason: `last proposal was ${new Date(meta.lastProposalAt).toUTCString()}; next one after ${LISTING_INTERVAL_DAYS === 1 ? "1 day" : LISTING_INTERVAL_DAYS + " days"}` };
   return { due: true, reason: "due" };
 }
 
@@ -92,8 +94,11 @@ export async function proposeFromQueue(meta) {
   const items = [];
   for (const { k, v: q } of await getAll("queue/")) if (q.status === "queued") items.push({ k, q });
   if (!items.length) return null;
+  // Rank: proven headroom first, weighted by what the agent has learned sells for this shop and by rising eBay demand.
+  const model = (await getJSON("agent/learn"))?.model;
   const h = (q) => q.screened?.headroomPence ?? -1;  // products with no rivals found come after ones with proven headroom
-  items.sort((a, b) => h(b.q) - h(a.q));
+  const score = (q) => (h(q) < 0 ? -1 : (h(q) + 1) * learnedWeight(q, model) * trendFactor(q));
+  items.sort((a, b) => score(b.q) - score(a.q));
   const tried = [];
   // Products already measured below the bar are skipped without spending eBay look-ups.
   const fresh = (q) => q.demand?.at && Date.now() - Date.parse(q.demand.at) < 14 * 864e5;
@@ -102,7 +107,7 @@ export async function proposeFromQueue(meta) {
   for (const { k, q } of live.slice(0, 12)) {
     let d = fresh(q) ? q.demand : await ebayDemand({ name: q.name, barcode: q.barcode });
     if (!d.checked) return { sent: false, reason: "couldn't check eBay demand (" + (d.reason || "unknown") + ")" };
-    if (!fresh(q)) await setJSON(k, { ...q, demand: d });
+    if (!fresh(q)) await setJSON(k, { ...q, demand: d, demandHistory: [...(q.demandHistory || []), { at: new Date().toISOString(), perMonth: d.perMonth }].slice(-12) });
     if (d.perMonth < demandBar(q.supplier)) { await setJSON(k, { ...q, demand: d, status: "no_demand" }); tried.push(q.name + ": only ~" + d.perMonth + " sales a month on eBay (needs " + demandBar(q.supplier) + ")"); continue; }
     const m = await ebayMatch({ name: q.name, barcode: q.barcode });
     if (!m.checked) return { sent: false, reason: "couldn't re-check eBay prices (" + (m.reason || "unknown") + ")" };
@@ -125,13 +130,19 @@ export async function proposeFromQueue(meta) {
       risks: (q.notes || []).join("; "), sources: [m.searchUrl, ...(m.top || []).map((t) => t.url)].filter(okUrl).slice(0, 5),
       run: null, history: [{ at: new Date().toISOString(), note: "Proposed from listing queue" }],
     };
+    // Claude suggests a search-friendly eBay title (you can still edit it on the approve page).
+    try {
+      const learned = (await getJSON("agent/learn"))?.insights || "";
+      const t = await betterTitle({ current: p.title, supplierName: q.name, facts: [q.material, q.dimensions, String(q.description || "").slice(0, 600)].filter(Boolean).join(". "), rivals: await rivalTitles(q.name), insights: learned });
+      if (t.by === "claude" && t.title) { p.listingTitle = t.title; p.titleNote = "Title written by Claude from buyer search words" + (t.note ? " – " + t.note : ""); }
+    } catch {}
     await setJSON("proposal/" + p.id, p);
     await setJSON(k, { ...q, status: "proposed", proposalId: p.id });
     await sendEmail(proposalEmail(p));
-    await setJSON("meta/agent", { ...meta, running: null, lastProposalAt: p.createdAt, lastRun: { at: p.createdAt, attempts: tried.map((t) => ({ title: t, ok: false, reasons: ["failed eBay re-check"] })).concat([{ title: p.title, ok: true, reasons: [] }]) } });
+    await setJSON("meta/agent", { ...meta, ...((await getJSON("meta/agent")) || {}), running: null, lastProposalAt: p.createdAt, lastRun: { at: p.createdAt, attempts: tried.map((t) => ({ title: t, ok: false, reasons: ["failed eBay re-check"] })).concat([{ title: p.title, ok: true, reasons: [] }]) } });
     return { sent: true, id: p.id, title: p.title, from: "queue" };
   }
-  await setJSON("meta/agent", { ...meta, running: null, lastRun: { at: new Date().toISOString(), attempts: tried.map((t) => ({ title: t, ok: false, reasons: ["failed eBay re-check"] })) } });
+  await setJSON("meta/agent", { ...meta, ...((await getJSON("meta/agent")) || {}), running: null, lastRun: { at: new Date().toISOString(), attempts: tried.map((t) => ({ title: t, ok: false, reasons: ["failed eBay re-check"] })) } });
   return { sent: false, reason: "no queued product passed the eBay price and demand checks (" + tried.length + " checked)" };
 }
 
@@ -189,7 +200,8 @@ export async function runCycle({ force = false } = {}) {
       const feedback = tried.length
         ? tried.slice(-6).join(" | ") + ". Try a different product" + (tried.length >= 3 ? ", a different supplier or a different category within pet/fitness" : "")
         : "";
-      const { proposal: c, usage } = await research(prev, feedback, await supplierBrief());
+      const learned = (await getJSON("agent/learn"))?.insights;
+      const { proposal: c, usage } = await research(prev, feedback, (await supplierBrief()) + (learned ? "\nWhat has sold / not sold for this shop so far (prefer similar winners, avoid losers): " + learned : ""));
       await recordChecks(c?.suppliersChecked).catch(() => {});
       for (const k in totalUsage) totalUsage[k] += usage[k] || 0;
       spentToday += costUSD(usage);

@@ -2,10 +2,11 @@
 // (nothing waiting for approval, and the last proposal was at least three days ago).
 import { env } from "../lib/agent/config.mjs";
 import { proposalDue } from "../lib/agent/pipeline.mjs";
-import { startResearch, startListing, startCjImport } from "../lib/agent/trigger.mjs";
+import { startResearch, startListing, startCjImport, startLearn } from "../lib/agent/trigger.mjs";
 import { getJSON, setJSON, getAll } from "../lib/agent/store.mjs";
 import { sellerStatus } from "../lib/agent/ebayuser.mjs";
 import { sendEmail, reconnectEmail } from "../lib/agent/email.mjs";
+import { sweepPromotions } from "../lib/agent/promote.mjs";
 
 export default async () => {
   if (env("AGENT_PAUSED") === "1") { console.log("agent paused"); return; }
@@ -23,6 +24,10 @@ export default async () => {
     const waiting = (await getAll("queue/cj-")).filter((x) => x.v.status === "queued").length;
     if (waiting < Number(env("CJ_QUEUE_TARGET", "10"))) console.log("CJ import:", await startCjImport());
   }
+  console.log("promotions:", JSON.stringify(await sweepPromotions().catch((e) => ({ error: String(e.message || e) }))));
+  // Weekly learning run (traffic, sales, market → improve listings, re-rank queue, email report).
+  const lr = (await getJSON("agent/learn"))?.lastRunAt;
+  if (env("AGENT_LEARN", "1") !== "0" && (!lr || Date.now() - Date.parse(lr) > 6.5 * 864e5)) console.log("learning run:", await startLearn());
   const due = await proposalDue();
   console.log("proposal due?", JSON.stringify(due));
   if (due.due) console.log("started research:", await startResearch(false));

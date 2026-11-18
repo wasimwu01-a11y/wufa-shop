@@ -24,3 +24,10 @@ export async function startCjImport() {
   });
   return res.status;
 }
+
+export async function startLearn(force = false) {
+  const res = await fetch(siteUrl() + "/.netlify/functions/agent-learn-background", {
+    method: "POST", headers: { "x-agent-key": env("AGENT_SECRET"), "content-type": "application/json" }, body: JSON.stringify({ force }),
+  });
+  return res.status;
+}

@@ -37,7 +37,7 @@ const clean = (it) => ({
   descriptionHtml: String(it.descriptionHtml || "").slice(0, 8000),
   dimensions: String(it.dimensions || "").slice(0, 60),
 });
-const DETAIL_FIELDS = ["images", "image", "description", "descriptionHtml", "dimensions", "material"];
+const DETAIL_FIELDS = ["images", "image", "description", "descriptionHtml", "dimensions", "material", "barcode"];
 
 async function op(body) {
   const items = (body.items || []).slice(0, body.op === "check" ? 5 : body.op === "queue" || body.op === "refresh" ? 50 : 600).map(clean);
@@ -261,7 +261,7 @@ $("q").onclick = async () => {
   for (let i = 0; i < sel.length; i += 50) { const b = sel.slice(i, i + 50);
     const screened = Object.fromEntries(b.map((r) => [r.ref, r.raw]));
     const j = await call("queue", b.map((r) => r.it), { screened }); added += j.added; queued = j.queued; }
-  $("qn").textContent = queued; $("st").textContent = added + " added to the listing queue (" + queued + " waiting). The agent proposes one every 3 days, best first."; $("q").disabled = false;
+  $("qn").textContent = queued; $("st").textContent = added + " added to the listing queue (" + queued + " waiting). The agent proposes one a day, best first."; $("q").disabled = false;
 };
 $("rf").onclick = async () => {
   const files = [...$("f").files]; if (!files.length) { $("st").textContent = "Choose the supplier file(s) first."; return; }

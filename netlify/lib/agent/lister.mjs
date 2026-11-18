@@ -20,6 +20,14 @@ const POSTAGE = { sd: () => env("EBAY_POSTAGE_POLICY_SD", "Wufa DS 1 day"), aw: 
 
 export const ebaySku = (supplier, sku) => ("DS-" + supplier.toUpperCase() + "-" + sku).replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 50);
 const fail = (msg, fix) => Object.assign(new Error(msg), { fix });
+/** A real barcode (EAN-8/UPC-A/EAN-13/GTIN-14) with a valid check digit, or null. */
+export function validGtin(code) {
+  const d = String(code || "").replace(/\D/g, "");
+  if (![8, 12, 13, 14].includes(d.length) || /^0+$/.test(d)) return null;
+  const n = d.split("").map(Number), check = n.pop();
+  const sum = n.reverse().reduce((s, x, i) => s + x * (i % 2 === 0 ? 3 : 1), 0);
+  return (10 - (sum % 10)) % 10 === check ? d : null;
+}
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 /** sell() with retries on eBay's temporary errors (5xx, rate limit, network). Only for repeatable calls. */
 async function sellR(method, path, body, tries = 3) {
@@ -106,9 +114,10 @@ async function categories(title, q, hint) {
 }
 
 /** Picks the first suggested category whose required item specifics we can fill. */
-async function pickCategory(title, q, hint) {
+async function pickCategory(title, q, hint, locked) {
   const tried = [];
-  for (const c of await categories(title, q, hint)) {
+  // When the agent improves a live listing, it keeps the listing's current category.
+  for (const c of locked?.id ? [{ id: String(locked.id), name: locked.name || "" }] : await categories(title, q, hint)) {
     const spec = await itemSpecifics(c.id, c.name, q, title, hint);
     if (!spec.missing.length) return { cat: c, spec };
     tried.push(`"${c.name}" needs ${spec.missing.join(", ")}`);
@@ -155,6 +164,8 @@ async function itemSpecifics(catId, catName, it, title, hint) {
       val = /\b(women|womens|women's|ladies|lady)\b/.test(text) ? has("Women") : /\b(men|mens|men's|gents)\b/.test(text) ? has("Men") : null;
       val = val || has("Unisex Adults") || has("Unisex Adult") || has("Unisex");
     }
+    if (!val && /^(ean|gtin)$/i.test(name) && validGtin(it.barcode)) val = validGtin(it.barcode);
+    if (!val && /^upc$/i.test(name) && validGtin(it.barcode)?.length === 12) val = validGtin(it.barcode);
     if (!val && /^(ean|upc|isbn|gtin|mpn|model|manufacturer part number)$/i.test(name)) val = "Does Not Apply";
     if (!val && /^(country|country\/region) of manufacture$/i.test(name)) val = has("Unknown") || null;
     if (val) aspects[name] = [val];
@@ -164,7 +175,7 @@ async function itemSpecifics(catId, catName, it, title, hint) {
 }
 
 function description(p, q) {
-  return buildDescription({ title: String(p.listingTitle || p.title).slice(0, 80), q, supplier: SUPPLIERS[q.supplier] });
+  return buildDescription({ title: String(p.listingTitle || p.title).slice(0, 80), q, supplier: SUPPLIERS[q.supplier], override: p.aiDescription?.blocks });
 }
 
 /** All supplier photos (max 12), copied into eBay's picture service; any that can't be copied keep the supplier link. */
@@ -183,15 +194,17 @@ export async function listProposal(p) {
   if (!q.image) throw fail("The supplier file has no photo for this product.", "List it manually with your own photos.");
   const title = String(p.listingTitle || p.title).slice(0, 80);
   const sku = ebaySku(q.supplier, q.sku);
-  const [loc, pol, { cat, spec }] = await Promise.all([ensureLocation(q.supplier), policies(q.supplier), pickCategory(title, q, p.categoryHint)]);
+  const [loc, pol, { cat, spec }] = await Promise.all([ensureLocation(q.supplier), policies(q.supplier), pickCategory(title, q, p.categoryHint, p.lockedCategory)]);
   const qty = Math.max(1, Math.min(5, Math.floor((q.stock || 0) - 2)));
   const pics = await photos(q);
+  const gtin = validGtin(q.barcode);
   const pic = { error: pics.every((x) => x.error) ? pics[0]?.error : null };
   const desc = description(p, q);
   const item = (withWeight) => ({
     availability: { shipToLocationAvailability: { quantity: qty } },
     condition: "NEW",
-    product: { title, description: desc.text.slice(0, 4000), aspects: spec.aspects, imageUrls: pics.map((x) => x.url) },
+    product: { title, description: desc.text.slice(0, 4000), aspects: { ...spec.aspects, ...(gtin && !spec.aspects.EAN ? { EAN: [gtin] } : {}) }, imageUrls: pics.map((x) => x.url),
+      ...(gtin ? (gtin.length === 12 ? { upc: [gtin] } : { ean: [gtin] }) : {}) },
     ...(withWeight && q.weightKg > 0 ? { packageWeightAndSize: { weight: { value: Math.round(q.weightKg * 1000), unit: "GRAM" } } } : {}),
   });
   const put = (b) => sellR("PUT", "/sell/inventory/v1/inventory_item/" + encodeURIComponent(sku), b);
@@ -221,10 +234,12 @@ export async function listProposal(p) {
   const pub = await sellR("POST", `/sell/inventory/v1/offer/${offerId}/publish`);
   if (!pub.ok || !pub.body?.listingId) throw fail("eBay refused to publish: " + ebayErrors(pub), "The message above is eBay's own reason. Fix it in Seller Hub if it's about your account or policies, or edit the title, then press Try again.");
   const listingId = String(pub.body.listingId);
-  await setJSON("listing/" + listingId, { listingId, sku, offerId, supplier: q.supplier, supplierSku: q.sku, proposalId: p.id, queueKey: p.queueKey,
-    pricePence: p.pricing.pricePence, quantity: qty, categoryId: cat.id, dropship: true, listedAt: new Date().toISOString() });
+  const prev = (await getJSON("listing/" + listingId)) || {}; // keep promotion details when an update re-sends the listing
+  await setJSON("listing/" + listingId, { ...prev, listingId, sku, offerId, supplier: q.supplier, supplierSku: q.sku, proposalId: p.id, queueKey: p.queueKey,
+    pricePence: p.pricing.pricePence, profitPence: p.pricing.profitPence, quantity: qty, categoryId: cat.id, categoryName: cat.name, title, photos: pics.length,
+    supplierCategory: q.category || "", dropship: true, ended: false, endedAt: null, listedAt: prev.listedAt || new Date().toISOString() });
   await update(p.queueKey, { status: "listed", listingId }, "Listed on eBay");
-  return { listingId, url: "https://www.ebay.co.uk/itm/" + listingId, categoryName: cat.name, quantity: qty, sku, photos: pics.length };
+  return { listingId, url: "https://www.ebay.co.uk/itm/" + listingId, categoryName: cat.name, quantity: qty, sku, photos: pics.length, ean: gtin || null };
 }
 
 /** Listing IDs created by the agent (used to keep dropship items off the website until website orders are automated). */

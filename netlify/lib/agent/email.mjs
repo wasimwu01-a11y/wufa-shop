@@ -62,6 +62,7 @@ export function proposalEmail(p) {
 ${p.image && /^https:\/\//.test(p.image) ? `<p><img src="${esc(p.image)}" alt="" width="220" style="max-width:100%;border-radius:8px;border:1px solid #e4e1da"></p>` : ""}
 <table style="border-collapse:collapse;font-size:14px">
 ${row("Product", link(p.title, p.supplierProductUrl) + (p.sku ? " <span style=\"color:#625f58\">(" + esc(p.sku) + ")</span>" : ""))}
+${p.listingTitle && p.listingTitle !== p.title ? row("eBay title", "<b>" + esc(p.listingTitle) + "</b>" + (p.titleNote ? ` <span style="color:#625f58">(${esc(p.titleNote)})</span>` : "") + " – you can edit it when you approve") : ""}
 ${row("Supplier", link(p.supplier.name, p.supplier.url) + (p.supplier.registered ? " (account already set up)" : " (needs registration)"))}
 ${row("Why it meets eBay rules", esc(p.supplier.policyEvidence))}
 ${row("Dispatch", esc(p.supplier.dispatch))}
@@ -179,7 +180,9 @@ ${row("Price", "<b>" + gbp(p.pricing.pricePence) + "</b> with free UK postage")}
 ${row("Profit per sale", gbp(p.pricing.profitPence))}
 ${row("Quantity listed", esc(r.quantity))}
 ${row("Category", esc(r.categoryName))}
-${r.photos ? row("Photos", esc(r.photos)) : ""}
+${r.photos ? row("Photos", esc(r.photos) + (r.photos < 5 ? " (all the supplier has – eBay suggests more; you can add your own in Seller Hub)" : "")) : ""}
+${row("EAN (barcode)", r.ean ? esc(r.ean) : "none from supplier")}
+${r.promo ? row("Promoted Listings", r.promo.rate ? `on at ${esc(r.promo.rate.toFixed(1))}% for 30 days (break-even: a promoted sale makes £0, others make full profit)` : r.promo.blocked ? "not yet – reconnect eBay once to allow promotions (link on your status page)" : r.promo.skipped ? "not promoted – " + esc(r.promo.skipped) : "will retry tomorrow – " + esc(r.promo.error || "")) : ""}
 ${row("Your eBay SKU", esc(r.sku))}
 </table>
 <p style="font-size:13px;color:#625f58">When it sells, you'll get an order pack email to place the order with ${esc(p.supplier.name)} (Phase 5). Until then, check Seller Hub for orders.</p>`);
@@ -196,4 +199,33 @@ ${btn("Try again", actionUrl("proposal", p.id, "retry-list", 30), true)}${btn("D
 export function reconnectEmail(expires) {
   const html = wrap("Please reconnect eBay selling access", `<p>The agent's access to your eBay account expires on <b>${esc(String(expires).slice(0, 10))}</b>. Open your connect page (<i>/agent/ebay-connect</i> with your key) and sign in to eBay again – it takes a minute.</p>`);
   return { subject: "Wufa agent: reconnect eBay before " + String(expires).slice(0, 10), html, text: "Reconnect eBay selling access before " + expires };
+}
+
+/* ---------- Weekly learning report ---------- */
+export function learnEmail({ run, model, insights, listings }) {
+  const pct = (x) => (x == null ? "–" : (x * 100).toFixed(1) + "%");
+  const live = listings.filter((L) => !L.ended);
+  const tr = (cells) => `<tr>${cells.map((c, i) => `<td style="padding:6px 8px;border-top:1px solid #e4e1da;${i ? "text-align:right;white-space:nowrap" : ""}">${c}</td>`).join("")}</tr>`;
+  const table = live.length
+    ? `<table style="border-collapse:collapse;width:100%;font-size:13px"><tr style="color:#625f58"><td style="padding:6px 8px">Listing</td><td style="padding:6px 8px;text-align:right">Days</td><td style="padding:6px 8px;text-align:right">Seen</td><td style="padding:6px 8px;text-align:right">Clicked</td><td style="padding:6px 8px;text-align:right">Views</td><td style="padding:6px 8px;text-align:right">Sold</td></tr>
+${live.map((L) => tr([link(String(L.title || L.listingId).slice(0, 48), "https://www.ebay.co.uk/itm/" + L.listingId), Math.round((Date.now() - Date.parse(L.listedAt)) / 864e5), L.perf?.impressions ?? "–", pct(L.perf?.ctr), L.perf?.views ?? "–", L.sales?.units || 0])).join("")}</table>`
+    : "<p>No agent listings yet.</p>";
+  const changeHtml = (c) => {
+    const what = c.type === "title" ? `New title${c.by === "claude" ? " (written by Claude)" : " (rival keywords)"}: <b>${esc(c.after)}</b><br><span style="color:#625f58">was: ${esc(c.before)}</span>`
+      : c.type === "description" ? `Rewrote the description of <b>${esc(c.title)}</b>${c.by === "claude" ? " with Claude" : ""}`
+      : `Ended <b>${esc(c.title)}</b>`;
+    return `<div style="border:1px solid #e4e1da;border-radius:8px;padding:12px;margin:0 0 10px;background:#fff">${what}<br><span style="color:#625f58;font-size:13px">Why: ${esc(c.reason)}</span><div style="margin-top:8px">${btn(c.type === "end" ? "Relist it" : "Undo", actionUrl("change", c.id, "undo", 30), false)}</div></div>`;
+  };
+  const tot = model?.totals || {};
+  const html = wrap("What I learned this week", `
+<p>${live.length} live agent listing${live.length === 1 ? "" : "s"}; in the last 30 days they were seen <b>${Math.round(tot.imp || 0)}</b> times in eBay search, clicked about <b>${Math.round(tot.clicks || 0)}</b> times and sold <b>${tot.sales || 0}</b>.</p>
+${table}
+<h2 style="font-size:16px;margin:20px 0 8px">What I changed (${run.changes.length})</h2>
+${run.changes.length ? run.changes.map(changeHtml).join("") : "<p>Nothing this week – listings are either too new (under 14 days), selling, or already changed recently.</p>"}
+<h2 style="font-size:16px;margin:20px 0 8px">What I've learned</h2>
+<p>${insights ? esc(insights) : "Not enough data yet to tell what sells best for your shop – I need a few hundred search appearances per type of product. Until then I rank products by profit headroom and eBay demand trend."}</p>
+<p style="color:#625f58;font-size:13px">I use this to choose which queued product to propose next and to brief Claude when writing titles. Undoing a change also stops me changing that part of the listing again.</p>
+${run.notes.length || run.errors.length ? `<h2 style="font-size:16px;margin:20px 0 8px">Notes</h2><ul>${[...run.notes, ...run.errors.map((e) => "Problem: " + e)].map((x) => "<li>" + esc(x) + "</li>").join("")}</ul>` : ""}`);
+  return { subject: `Wufa agent – weekly report: ${run.changes.length} change${run.changes.length === 1 ? "" : "s"}, ${tot.sales || 0} sold`, html,
+    text: textOf(["What I learned this week", insights, ...run.changes.map((c) => `${c.type}: ${c.after || c.title} (${c.reason})`)]) };
 }

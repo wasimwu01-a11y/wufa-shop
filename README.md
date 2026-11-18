@@ -23,7 +23,7 @@ Extra Netlify environment variables: `AGENT_SECRET` (40+ random characters), `RE
 
 ## Dropship agent (Phase 2: research)
 - `netlify/lib/agent/research.mjs` – Claude (web search + web fetch) finds one product + UK wholesale dropship supplier and returns it via a `submit_proposal` tool.
-- `netlify/lib/agent/pipeline.mjs` – pacing (one proposal per 3 days, none while one is waiting), price/competition checks (eBay API when connected, otherwise estimated), proposal email.
+- `netlify/lib/agent/pipeline.mjs` – pacing (one proposal a day, none while one is waiting), price/competition checks (eBay API when connected, otherwise estimated), proposal email.
 - `agent-schedule` runs daily 07:10 UTC; `agent-research-background` does the work (up to 15 min).
 - `/agent/research-now?key=<AGENT_SECRET>` – start a run now. `/agent/status?key=<AGENT_SECRET>` – what the agent is doing.
 - "Registration done" asks for the real trade price and delivery, then re-checks the £1.50 rule.
@@ -35,7 +35,7 @@ Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (d
 
 ## Product screener + listing queue
 - `/agent/screener?key=<AGENT_SECRET>` – upload Something Different (`DropshipStockFull.txt`) and/or AW (`shop_awd.csv`) files. The browser parses them; the server applies the rules (`netlify/lib/agent/catalog.mjs`: allowed categories, VAT on cost and delivery, supplier delivery bands, £1.50 profit), then checks survivors on eBay UK (`ebayMatch`: barcode + title matches, own listings ignored). Tick winners → "Add selected to listing queue".
-- The agent proposes the best queued product every 3 days (re-checking its eBay price first). Approving a queued product goes straight to `ready_to_list` (known supplier cost).
+- The agent proposes the best queued product once a day (re-checking its eBay price first). Approving a queued product goes straight to `ready_to_list` (known supplier cost).
 - When the queue runs out the agent emails you once (weekly reminder): add products with the screener, or press "Allow internet research" (stored in Blobs `agent/settings`; "Stop internet research" button on research proposals). `AGENT_AI_RESEARCH=1` forces it on. Screening uses ~2 eBay API calls per product (Browse API limit ~5,000/day).
 
 ## Dropship agent (Phase 4: listing on eBay)
@@ -60,3 +60,26 @@ Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (d
 - Cost = CJ price + delivery (USD → GBP at the day's rate + `CJ_FX_BUFFER` 3% card fee) + 20% VAT (`CJ_ADD_VAT=0` to drop if CJ invoices without VAT).
 - Products must sell `DEMAND_MIN_PER_MONTH` (100) a month on eBay UK and beat the cheapest rival with £1.50 profit.
 - eBay postage policy for CJ listings: `EBAY_POSTAGE_POLICY_CJ` (default "Wufa DS 2 days"); item location `CJ_LOCATION_CITY` / `CJ_POSTCODE`.
+
+## Pace, EANs and Promoted Listings
+- One new proposal a day (`AGENT_LISTING_INTERVAL_DAYS`, default 1); none while one is waiting for you.
+- Listings carry the supplier's barcode as EAN/UPC when it has a valid check digit.
+- Every new agent listing gets a Promoted Listings Standard ad at the break-even rate (profit ÷ price incl. VAT on the fee),
+  in the campaign "Wufa agent – break-even (auto)", for `AGENT_PROMOTE_DAYS` (30) days; then the ad is removed.
+  Rates under eBay's 2% minimum are skipped. `AGENT_PROMOTE=0` turns it off. Needs one reconnect at /agent/ebay-connect (marketing permission).
+
+## Self-learning (weekly)
+- Each week (`agent-learn-background`, started by the daily schedule) the agent collects, for every agent listing: eBay traffic
+  (Analytics API: impressions, views, click-through, conversion), your orders (Fulfillment API), the cheapest rival price, and
+  fresh eBay demand for the top of the queue (to spot rising/falling products).
+- It learns smoothed click-through × conversion per supplier, supplier category, price band, photo count and promotion, and uses it
+  (with the demand trend) to rank the listing queue and to brief Claude and internet research.
+- Changes it makes by itself (listings 14+ days old with no sales; at most `AGENT_LEARN_MAX_CHANGES` (6) a week):
+  new title (few search appearances, or seen but not clicked; every 21+ days), new description (30+ views, no sale; every 30+ days),
+  end the listing (45+ days, no sales after a new title, or rivals now under our minimum price). Selling listings are left alone.
+- Claude (`AGENT_WRITER_MODEL`, default claude-haiku-5-5) writes titles/descriptions from the supplier's facts and rival listings'
+  search words; results are checked (length, no health/brand claims, same product) with a rule-based fallback. New proposals come
+  with a Claude title (editable on the approve page) and new listings with a Claude description. Spend counts against the daily AI budget.
+- One weekly email shows what it learned and changed, with Undo / Relist buttons (undo also stops that kind of change on that listing).
+- Turn off: `AGENT_LEARN=0` (whole loop), `AGENT_LEARN_AUTO=0` (learn and report but don't change listings), `AGENT_AI_WRITING=0` (no Claude).
+- Needs the eBay reconnect (analytics + marketing permissions) at /agent/ebay-connect.

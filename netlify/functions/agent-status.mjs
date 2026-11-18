@@ -37,7 +37,12 @@ export default async (req) => {
   lines.push("Internet research: " + (env("AGENT_AI_RESEARCH") === "1" ? "on (Netlify setting)" : st === "research_on" ? "on (you allowed it by email)" : st === "awaiting_choice" ? "off – waiting for your choice (email sent)" : "off"));
   const ss = await sellerStatus().catch(() => ({ connected: false }));
   lines.push("eBay selling access: " + (ss.connected ? "connected (valid until " + ss.refreshExpires.slice(0, 10) + ")" : "NOT connected – open /agent/ebay-connect"));
-  lines.push("Agent listings on eBay: " + (await listKeys("listing/")).length);
+  const listings = await getAll("listing/");
+  lines.push("Agent listings on eBay: " + listings.length);
+  const lrn = await getJSON("agent/learn");
+  lines.push("Learning: " + (lrn?.lastRunAt ? "last run " + lrn.lastRunAt.slice(0, 16) + " – " + (lrn.lastRun?.changes?.length || 0) + " changes" + (lrn.insights ? "; " + lrn.insights : "; not enough data yet") : "first run at the next daily run") + (ss.connected && !ss.canAnalyse ? " (traffic data needs one eBay reconnect)" : ""));
+  if (ss.connected && !ss.canPromote) lines.push("Promoted Listings: needs one reconnect – open /agent/ebay-connect?key=… and sign in again (adds the marketing permission)");
+  for (const { v: L } of listings) if (L.promo) lines.push("  - " + L.listingId + ": promotion " + L.promo.status + (L.promo.rate ? " at " + L.promo.rate + "%" : "") + (L.promo.until ? " until " + L.promo.until.slice(0, 10) : "") + (L.promo.reason || L.promo.error ? " – " + (L.promo.reason || L.promo.error) : ""));
   const cs = await cjStatus().catch(() => null);
   if (cs) lines.push("CJ Dropshipping: " + (cs.connected ? "API key set" : "NOT set (CJ_API_KEY)") + "; " + cs.inQueue + " CJ products in queue" + (cs.state?.lastRun ? "; last import " + cs.state.lastRun.at.slice(0, 16) + " – checked " + cs.state.lastRun.checked + ", queued " + cs.state.lastRun.queued.length + (cs.state.lastRun.error ? " (stopped: " + cs.state.lastRun.error + ")" : "") : ""));
   lines.push("", "Proposals:");
