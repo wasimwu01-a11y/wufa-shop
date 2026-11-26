@@ -56,7 +56,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-appl
 h1{font-size:1.3rem;margin:0 0 12px}p{margin:0 0 12px}.m{color:var(--muted);font-size:.9rem}
 button{font:inherit;font-weight:600;padding:12px 20px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}
 label{display:block;font-weight:600;margin:12px 0 4px}input,select{font:inherit;width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}
-dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 0 16px}dt{color:var(--muted)}dd{margin:0}</style></head>
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 0 16px}dt{color:var(--muted)}dd{margin:0}
+a.b{display:inline-block;padding:12px 20px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-weight:600}</style></head>
 <body><div class="w"><div class="c">${body}</div><p class="m" style="margin-top:12px">Wufa agent</p></div></body></html>`,
     { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Robots-Tag": "noindex" } }
   );
@@ -195,7 +196,9 @@ export default async (req) => {
         if (!/^[A-Z0-9 \-]{6,60}$/.test(tracking) || !CARRIERS.includes(carrier)) return fail("Please enter a valid carrier and tracking number.");
         changes = { status: "paid_awaiting_sync", tracking, carrier };
         note = `Paid; ${carrier} ${tracking}`;
-        after = `Tracking ${tracking} saved. It will be sent to ${item.channel === "eBay" ? "eBay" : "the customer"} automatically.`;
+        after = item.channel === "website"
+          ? `Tracking ${tracking} saved. Use the button below to email the customer their tracking number.`
+          : `Tracking ${tracking} saved. It will be sent to eBay automatically.`;
         break;
       }
       case "change:undo": {
@@ -236,7 +239,10 @@ export default async (req) => {
     console.error(e);
     return fail("Something went wrong saving that. Please try the button again in a minute.", 500);
   }
-  return page("Done", `<h1>Done</h1><p>${esc(after)}</p>`);
+  // Website orders: one-tap email to the customer with their tracking (sent from your own email app).
+  const mail = t.k === "order" && t.a === "paid" && item.channel === "website" && item.buyerEmail
+    ? `<p><a class="b" href="mailto:${esc(item.buyerEmail)}?subject=${encodeURIComponent("Your Wufa order is on its way")}&body=${encodeURIComponent(`Hello ${item.shipTo?.name || ""},\n\nThank you for your order of ${item.title}${item.quantity > 1 ? " (x" + item.quantity + ")" : ""}. It has been dispatched with ${String(form.get("carrier") || "")}, tracking number ${String(form.get("tracking") || "").trim().toUpperCase()}.\n\nBest regards,\nWufa Ltd`)}">Email the customer their tracking</a></p>` : "";
+  return page("Done", `<h1>Done</h1><p>${esc(after)}</p>${mail}`);
 };
 
 export const config = { path: "/agent/act" };

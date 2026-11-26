@@ -83,3 +83,10 @@ Extra settings: `ANTHROPIC_API_KEY` (wufa workspace). Optional: `AGENT_MODEL` (d
 - One weekly email shows what it learned and changed, with Undo / Relist buttons (undo also stops that kind of change on that listing).
 - Turn off: `AGENT_LEARN=0` (whole loop), `AGENT_LEARN_AUTO=0` (learn and report but don't change listings), `AGENT_AI_WRITING=0` (no Claude).
 - Needs the eBay reconnect (analytics + marketing permissions) at /agent/ebay-connect.
+
+## Website orders for agent products (Stripe webhook)
+- `POST /api/stripe-webhook` (signed with `STRIPE_WEBHOOK_SECRET`, event `checkout.session.completed`):
+  agent product → order + order pack email (supplier, code, address, NI/Highlands surcharge warning); your own product → "post from stock" email.
+- Agent products appear on the website (with the supplier's delivery time) once `STRIPE_WEBHOOK_SECRET` is set; `AGENT_SITE_DROPSHIP=0` hides them.
+- After you enter tracking for a website order, the confirmation page has a one-tap email to the customer (sent from your own email app).
+- Website wording now says "shipped from the UK" instead of Belfast.

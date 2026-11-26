@@ -237,7 +237,7 @@ export async function listProposal(p) {
   const prev = (await getJSON("listing/" + listingId)) || {}; // keep promotion details when an update re-sends the listing
   await setJSON("listing/" + listingId, { ...prev, listingId, sku, offerId, supplier: q.supplier, supplierSku: q.sku, proposalId: p.id, queueKey: p.queueKey,
     pricePence: p.pricing.pricePence, profitPence: p.pricing.profitPence, quantity: qty, categoryId: cat.id, categoryName: cat.name, title, photos: pics.length,
-    supplierCategory: q.category || "", dropship: true, ended: false, endedAt: null, listedAt: prev.listedAt || new Date().toISOString() });
+    supplierCategory: q.category || "", dispatchDays: p.dispatchDays ?? null, deliveryDaysMax: p.deliveryDaysMax ?? null, dropship: true, ended: false, endedAt: null, listedAt: prev.listedAt || new Date().toISOString() });
   await update(p.queueKey, { status: "listed", listingId }, "Listed on eBay");
   return { listingId, url: "https://www.ebay.co.uk/itm/" + listingId, categoryName: cat.name, quantity: qty, sku, photos: pics.length, ean: gtin || null };
 }

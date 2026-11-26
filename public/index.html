@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wufa Ltd | Gym &amp; Pet Products</title>
-<meta name="description" content="Wufa Ltd – pet and gym products shipped from Belfast, UK.">
+<meta name="description" content="Wufa Ltd – pet and gym products shipped from the UK.">
 <style>
 :root{--bg:#fafaf8;--card:#fff;--text:#1d1d1b;--muted:#625f58;--accent:#c8372d;--line:#e4e1da}
 @media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#201f1d;--text:#f2f0eb;--muted:#a9a59c;--line:#34322e}}
@@ -77,7 +77,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 
 <main class="wrap">
   <div class="hero">
-    <h1>Pet &amp; gym products, shipped from Belfast.</h1>
+    <h1>Pet &amp; gym products, shipped from the UK.</h1>
     <p>Simple, useful products from Wufa Ltd. Pay securely online or message us on WhatsApp.</p>
   </div>
 
@@ -103,6 +103,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
           <div class="tag" id="itTag"></div>
           <h2 id="itTitle"></h2>
           <div class="price" id="itPrice"></div>
+          <p id="itDelivery" hidden style="margin:-6px 0 14px;color:var(--muted)"></p>
           <ul class="f" id="itFeatures"></ul>
           <p class="desc" id="itDesc"></p>
           <div id="opts" hidden><label for="optSel" id="optLabel" style="display:block;font-weight:600;margin:0 0 6px"></label>
@@ -121,7 +122,7 @@ footer{border-top:1px solid var(--line);padding:24px 0;color:var(--muted);font-s
 
   <section id="delivery">
     <div class="cols">
-      <div class="box"><h3>Delivery</h3><p>Dispatched from Belfast, United Kingdom. Delivery options and timings are shown at checkout.</p></div>
+      <div class="box"><h3>Delivery</h3><p>Dispatched from the UK. Delivery times are shown on each product and at checkout.</p></div>
       <div class="box"><h3>Returns</h3><p>30-day returns on unused items. The buyer pays return postage unless the item is faulty. Contact us first and we’ll sort it out quickly. <a href="terms.html">Full returns terms</a>.</p></div>
       <div class="box"><h3>Payments</h3><p>Pay securely online. We never see or store your card details. <a href="privacy.html">Privacy policy</a>.</p></div>
     </div>
@@ -193,6 +194,7 @@ function showItem(id){
   $("itFeatures").innerHTML = (p.features || []).map(function(f){ return "<li>" + esc(f) + "</li>"; }).join("");
   $("itDesc").textContent = p.description || "";
   $("buy").textContent = "Buy now – " + money(p.pricePence);
+  $("itDelivery").hidden = !p.delivery; $("itDelivery").textContent = p.delivery ? "🚚 " + p.delivery : "";
   $("buy").dataset.id = p.id;
   $("buy").dataset.vid = p.id;
   $("buyErr").hidden = true;

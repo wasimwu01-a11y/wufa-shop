@@ -48,7 +48,7 @@ export default async (req) => {
           product_data: {
             name: (p.variantLabel ? p.title.slice(0, 200) + " – " + p.variantLabel : p.title).slice(0, 250),
             images: p.images[0] ? { 0: p.images[0] } : undefined,
-            metadata: { ebay_item_id: p.id, option: (p.variantLabel || "").slice(0, 200) },
+            metadata: { title: p.title.slice(0, 490), ebay_item_id: p.id, option: (p.variantLabel || "").slice(0, 200) },
           },
         },
       },

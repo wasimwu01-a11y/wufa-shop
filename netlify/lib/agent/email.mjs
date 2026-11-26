@@ -139,12 +139,16 @@ export function orderPackEmail(o) {
   const addr = [a.name, a.line1, a.line2, a.city, a.postcode, a.country].filter(Boolean).map(esc).join("<br>");
   const html = wrap("Order to place: " + o.title, `
 <p>A customer bought this on <b>${esc(o.channel)}</b> (order ${esc(o.channelOrderId)}). Place it with the supplier and pay with your own account.</p>
+${o.option ? `<p>Option chosen: <b>${esc(o.option)}</b></p>` : ""}
 <table style="border-collapse:collapse;font-size:14px">
 ${row("Supplier product", link(o.title, o.supplierProductUrl))}
 ${row("Supplier", link(o.supplierName, o.supplierUrl))}
 ${row("Quantity", esc(o.quantity))}
 ${row("Deliver to", "<div style=\"font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;border:1px solid #e4e1da;border-radius:8px;padding:10px 12px\">" + addr + "</div>")}
 ${row("Phone", esc(a.phone || "–"))}
+${o.supplierSku ? row("Supplier code", esc(o.supplierSku)) : ""}
+${o.surchargeArea ? row("⚠ Delivery area", "<b>" + esc(o.surchargeArea) + "</b>") : ""}
+${o.buyerEmail ? row("Customer email", esc(o.buyerEmail)) : ""}
 ${row("Customer paid", gbp(o.paidPence))}
 ${row("Expected supplier cost", gbp(o.expectedCostPence))}
 ${row("Expected profit", gbp(o.expectedProfitPence))}
@@ -228,4 +232,24 @@ ${run.changes.length ? run.changes.map(changeHtml).join("") : "<p>Nothing this w
 ${run.notes.length || run.errors.length ? `<h2 style="font-size:16px;margin:20px 0 8px">Notes</h2><ul>${[...run.notes, ...run.errors.map((e) => "Problem: " + e)].map((x) => "<li>" + esc(x) + "</li>").join("")}</ul>` : ""}`);
   return { subject: `Wufa agent – weekly report: ${run.changes.length} change${run.changes.length === 1 ? "" : "s"}, ${tot.sales || 0} sold`, html,
     text: textOf(["What I learned this week", insights, ...run.changes.map((c) => `${c.type}: ${c.after || c.title} (${c.reason})`)]) };
+}
+
+/* ---------- Website order for one of your own (stocked) products ---------- */
+export function ownOrderEmail(o) {
+  const a = o.shipTo;
+  const addr = [a.name, a.line1, a.line2, a.city, a.postcode, a.country].filter(Boolean).map(esc).join("<br>");
+  const html = wrap("Website order to post: " + o.title, `
+<p>Someone paid on your website for one of your own products. Post it from your stock and let the customer know.</p>
+<table style="border-collapse:collapse;font-size:14px">
+${row("Product", o.ebayUrl ? link(o.title, o.ebayUrl) : esc(o.title))}
+${o.option ? row("Option", esc(o.option)) : ""}
+${row("Quantity", esc(o.quantity))}
+${row("Deliver to", "<div style=\"font-family:ui-monospace,Menlo,Consolas,monospace;background:#fff;border:1px solid #e4e1da;border-radius:8px;padding:10px 12px\">" + addr + "</div>")}
+${row("Phone", esc(a.phone || "–"))}
+${row("Customer email", esc(o.buyerEmail || "–"))}
+${row("Customer paid", gbp(o.paidPence))}
+${row("Stripe payment", esc(o.stripeSession))}
+</table>
+<p style="color:#625f58;font-size:13px">Remember to reduce the quantity on your eBay listing by ${esc(o.quantity)} so you don't sell the same item twice.</p>`);
+  return { subject: "Website order to post: " + o.title + " × " + o.quantity, html, text: textOf(["Website order: " + o.title + " x" + o.quantity, a.name, a.line1, a.line2, a.city, a.postcode, a.country]) };
 }

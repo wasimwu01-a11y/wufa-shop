@@ -171,18 +171,29 @@ export async function listProducts() {
     const g = await getGroup(legacyOf(it.itemId)).catch(() => null);
     return (g && shapeGroup(g)) || shape(it);
   }));
-  const hide = await hiddenListings();
-  return out.filter((p) => p && p.currency === "GBP" && p.pricePence > 0 && !hide.has(legacyOf(p.id)));
+  const agent = await agentListings();
+  return out
+    .filter((p) => p && p.currency === "GBP" && p.pricePence > 0 && !(agent.has(legacyOf(p.id)) && !agentOnSite()))
+    .map((p) => (agent.get(legacyOf(p.id)) ? { ...p, delivery: agent.get(legacyOf(p.id)) } : p));
 }
 
-// Listings created by the dropship agent stay off the website until website orders for them are automated
-// (set AGENT_SITE_DROPSHIP=1 once Phase 3 is live).
-async function hiddenListings() {
-  if (env("AGENT_SITE_DROPSHIP") === "1") return new Set();
+// Products the dropship agent listed are shown on the website once Stripe tells the site about payments
+// (STRIPE_WEBHOOK_SECRET set – then each website sale becomes an order pack). AGENT_SITE_DROPSHIP=0 hides them.
+const agentOnSite = () => env("AGENT_SITE_DROPSHIP") === "1" || (env("AGENT_SITE_DROPSHIP") !== "0" && !!env("STRIPE_WEBHOOK_SECRET"));
+
+/** Map of agent listing id → delivery text shown on the website (supplier's dispatch and delivery time). */
+async function agentListings() {
   try {
-    const { listKeys } = await import("./agent/store.mjs");
-    return new Set((await listKeys("listing/")).map((k) => k.slice("listing/".length)));
-  } catch { return new Set(); }
+    const { getAll, getJSON } = await import("./agent/store.mjs");
+    const m = new Map();
+    for (const { v: L } of await getAll("listing/")) {
+      if (!L.dropship || L.ended) continue;
+      const p = L.dispatchDays == null && L.proposalId ? await getJSON("proposal/" + L.proposalId) : null;
+      const d = L.dispatchDays ?? p?.dispatchDays ?? 2, max = L.deliveryDaysMax ?? p?.deliveryDaysMax ?? 7;
+      m.set(String(L.listingId), `Dispatched from our UK supplier within ${d} working day${d === 1 ? "" : "s"}; delivered within ${max} working days.`);
+    }
+    return m;
+  } catch { return new Map(); }
 }
 
 // Fetches one listing live and checks it really is ours and still for sale.
@@ -201,8 +212,10 @@ export async function getProduct(itemId) {
   if (it.itemEndDate && Date.parse(it.itemEndDate) < Date.now())
     throw Object.assign(new Error("This listing has ended"), { code: 409 });
   if (it.price?.currency !== "GBP") throw Object.assign(new Error("Item not priced in GBP"), { code: 409 });
-  if ((await hiddenListings()).has(legacyOf(itemId))) throw Object.assign(new Error("This item is only available on eBay"), { code: 409 });
+  const agent = await agentListings();
+  if (agent.has(legacyOf(itemId)) && !agentOnSite()) throw Object.assign(new Error("This item is only available on eBay"), { code: 409 });
   const p = shape(it);
+  if (agent.has(legacyOf(itemId))) p.delivery = agent.get(legacyOf(itemId));
   if (isVariation(it)) {
     // Name the chosen option from eBay's own data (not from the browser).
     const g = await getGroup(legacyOf(itemId)).catch(() => null);
