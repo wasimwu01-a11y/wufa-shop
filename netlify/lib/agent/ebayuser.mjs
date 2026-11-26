@@ -109,3 +109,20 @@ async function copyImage(base, url) {
 
 export const ebayErrors = (r) => (r.body?.errors || []).map((e) => (e.longMessage || e.message || "") + (e.errorId ? " [eBay error " + e.errorId + (e.parameters?.length ? ": " + e.parameters.map((x) => x.name + "=" + x.value).join(", ") : "") + "]" : "")).filter(Boolean).join(" | ") || "HTTP " + r.status;
 export { siteUrl };
+
+/** Uploads image bytes (e.g. an enlarged supplier photo) to eBay's picture service. Returns { url } or { error }. */
+export async function ebayImageFromBytes(bytes, filename = "photo.jpg") {
+  const base = env("EBAY_MEDIA_BASE", "https://apim.ebay.com");
+  try {
+    const form = new FormData();
+    form.append("image", new Blob([bytes], { type: "image/jpeg" }), filename);
+    const res = await fetch(base + "/commerce/media/v1_beta/image/create_image_from_file", {
+      method: "POST", headers: { Authorization: "Bearer " + (await userToken()) }, body: form,
+    });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j.imageUrl) return { url: j.imageUrl };
+    const loc = res.headers.get("location");
+    if (res.ok && loc) { const g = await sell("GET", /^https?:/.test(loc) ? loc : base + loc); if (g.ok && g.body?.imageUrl) return { url: g.body.imageUrl }; }
+    return { error: ebayErrors({ status: res.status, body: j }) };
+  } catch (e) { return { error: String(e.message || e) }; }
+}

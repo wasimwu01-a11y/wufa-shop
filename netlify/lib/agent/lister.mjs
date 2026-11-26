@@ -3,7 +3,7 @@
 // policies) → publish. Only products from the supplier files (known cost) are listed automatically.
 import { env } from "./config.mjs";
 import { getJSON, setJSON, listKeys, update } from "./store.mjs";
-import { sell, ebayImage, ebayErrors } from "./ebayuser.mjs";
+import { sell, ebayImage, ebayImageFromBytes, ebayErrors } from "./ebayuser.mjs";
 import { ebayGet } from "../shop.mjs";
 import { SUPPLIERS } from "./catalog.mjs";
 import { buildDescription } from "./describe.mjs";
@@ -182,8 +182,35 @@ function description(p, q) {
 async function photos(q) {
   const list = [...new Set([...(q.images || []), q.image].filter((x) => /^https:\/\//.test(x || "")))].slice(0, 12);
   const out = [];
-  for (let i = 0; i < list.length; i += 4) out.push(...(await Promise.all(list.slice(i, i + 4).map(ebayImage))));
+  for (let i = 0; i < list.length; i += 4) out.push(...(await Promise.all(list.slice(i, i + 4).map(photo))));
   return out;
+}
+
+const MIN_SIDE = 500;      // eBay's minimum on the longest side
+const TARGET_SIDE = () => Number(env("EBAY_PHOTO_UPSCALE_TO", "1000"));
+
+/** One supplier photo → eBay. Photos smaller than eBay's 500px minimum are enlarged (same proportions) first. */
+export async function photo(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (res.ok) {
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (bytes.length < 12e6) {
+        const { Jimp, ResizeStrategy } = await import("jimp");
+        const img = await Jimp.read(bytes);
+        const long = Math.max(img.width, img.height);
+        if (long > 0 && long < MIN_SIDE) {
+          const k = TARGET_SIDE() / long;
+          img.resize({ w: Math.round(img.width * k), h: Math.round(img.height * k), mode: ResizeStrategy.BICUBIC });
+          const jpg = await img.getBuffer("image/jpeg", { quality: 92 });
+          const up = await ebayImageFromBytes(jpg);
+          if (up.url) return { url: up.url, enlarged: `${img.width / k | 0}→${img.width}px` };
+          return { url, error: "couldn't upload the enlarged photo: " + up.error };
+        }
+      }
+    }
+  } catch { /* fall back to letting eBay fetch the original */ }
+  return ebayImage(url);
 }
 
 /** Lists one approved proposal. Returns { listingId, url }. Throws with .fix on problems you can solve. */
