@@ -1,7 +1,7 @@
 // One research cycle: decide if a proposal is due, research a candidate, check price + competition,
 // save it and email it for approval.
-import { LISTING_INTERVAL_DAYS, MIN_PROFIT_GBP, env } from "./config.mjs";
-import { getJSON, setJSON, listKeys, getAll, newId } from "./store.mjs";
+import { LISTING_INTERVAL_DAYS, MIN_PROFIT_GBP, APPROVAL_TTL_DAYS, env } from "./config.mjs";
+import { getJSON, setJSON, listKeys, getAll, newId, update } from "./store.mjs";
 import { research, costUSD } from "./research.mjs";
 import { ebayCompetition, ebayMatch, ebayDemand } from "./competitors.mjs";
 import { learnedWeight, trendFactor } from "./learn.mjs";
@@ -23,7 +23,16 @@ export async function proposalDue(now = Date.now()) {
   if (meta.running && now - Date.parse(meta.running) < 30 * 60e3) return { due: false, reason: "a research run is already in progress" };
   for (const { k, v: p } of await getAll("proposal/")) {
     if (k.startsWith("proposal/TEST-")) continue;
-    if (OPEN.includes(p.status)) return { due: false, reason: `proposal "${p.title}" is waiting for you (${p.status.replace(/_/g, " ")})` };
+    // A proposal whose email buttons have expired can't be answered any more: retire it (and put its product
+    // back in the queue, so it can come round again with fresh buttons) instead of blocking the agent.
+    const startedAt = Date.parse(p.sentAt || p.createdAt || p.history?.[0]?.at || 0);
+    if (["awaiting_approval", "awaiting_registration", "price_failed"].includes(p.status) && startedAt && now - startedAt > APPROVAL_TTL_DAYS * 864e5) {
+      await update(k, { status: "expired" }, `No answer within ${APPROVAL_TTL_DAYS} days – buttons expired`);
+      const q = p.queueKey ? await getJSON(p.queueKey) : null;
+      if (q && q.status === "proposed") await setJSON(p.queueKey, { ...q, status: "queued", proposalId: null });
+      continue;
+    }
+    if (OPEN.includes(p.status)) return { due: false, reason: `proposal "${p.title}" is waiting for you (${p.status.replace(/_/g, " ")}) – it expires ${new Date(startedAt + APPROVAL_TTL_DAYS * 864e5).toUTCString().slice(0, 16)} if you don't answer` };
   }
   const today = new Date(now).toISOString().slice(0, 10);
   if (meta.spend?.date === today && meta.spend.usd >= dailyBudget())
